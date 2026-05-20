@@ -1,15 +1,19 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Video, Image, Upload, Play, Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
 import { useTasks } from '../context/TaskContext';
-import type { GenerationMode, ImageFile, VideoGenerationRequest } from '../types';
-import GeekaiApi from '../services/api';
+import type { GenerationMode, ImageFile, VideoGenerationRequest, ModelInfo } from '../types';
+import VideoApi from '../services/api';
 import ImageUploader from '../services/imageUpload';
 
 const GeneratePage: React.FC = () => {
-  const { config } = useConfig();
+  const { config, activePlatform, setActivePlatform } = useConfig();
   const { addTask, updateTask } = useTasks();
   const [mode, setMode] = useState<GenerationMode>('text');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [aspectRatio, setAspectRatio] = useState<string>('16:9');
+  const [resolution, setResolution] = useState<string>('720p');
+  const [duration, setDuration] = useState<number>(4);
   const [promptList, setPromptList] = useState<string[]>(['']);
   const [generationCount, setGenerationCount] = useState<number>(1);
   const [images, setImages] = useState<ImageFile[]>([]);
@@ -17,6 +21,16 @@ const GeneratePage: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
+  
+  const [enhancePrompt, setEnhancePrompt] = useState<boolean>(true);
+  const [enableUpsample, setEnableUpsample] = useState<boolean>(true);
+  const [watermark, setWatermark] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (activePlatform) {
+      setSelectedModel(activePlatform.defaultModel);
+    }
+  }, [activePlatform]);
 
   const modes: { value: GenerationMode; label: string; icon: React.ReactNode }[] = [
     { value: 'text', label: '文生视频', icon: <Video className="w-4 h-4" /> },
@@ -25,19 +39,34 @@ const GeneratePage: React.FC = () => {
     { value: 'multiImage', label: '多图生成', icon: <Image className="w-4 h-4" /> },
   ];
 
+  const aspectRatios = [
+    { value: '16:9', label: '横屏 16:9' },
+    { value: '9:16', label: '竖屏 9:16' },
+  ];
+
+  const resolutions = [
+    { value: '720p', label: '标清 720p' },
+    { value: '1080p', label: '高清 1080p' },
+    { value: '4k', label: '超清 4K' },
+  ];
+
+  const durations = [4, 6, 8];
+
+  const getSupportedModels = (): ModelInfo[] => {
+    if (!activePlatform?.models) return [];
+    return activePlatform.models.filter(model => model.supportedModes.includes(mode));
+  };
+
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
     
-    console.log('config.ck value:', config.ck ? `[SET, length: ${config.ck.length}]` : '[EMPTY]');
-    console.log('config.ck preview:', config.ck?.substring(0, 100));
-    
-    if (!config.ck) {
-      setError('请先在配置页面设置Cookie (CK)');
+    if (!config.uploadCk) {
+      setError('请先在配置页面设置图床Cookie (CK)');
       return;
     }
 
-    const uploader = new ImageUploader(config.ck);
+    const uploader = new ImageUploader(config.uploadCk);
     const newImages: ImageFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -61,7 +90,7 @@ const GeneratePage: React.FC = () => {
       setImages(prev => [...prev, ...newImages]);
     }
     e.target.value = '';
-  }, [config.ck, mode, tailImage]);
+  }, [config.uploadCk, mode, tailImage]);
 
   const handleRemoveImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
@@ -88,14 +117,19 @@ const GeneratePage: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!config.apiKey) {
-      setError('请先配置API Key');
+    if (!activePlatform?.apiKey) {
+      setError('请先配置当前平台的API Key');
       return;
     }
 
     const validPrompts = promptList.filter(p => p.trim());
     if (validPrompts.length === 0) {
       setError('请输入至少一个Prompt');
+      return;
+    }
+
+    if (!selectedModel) {
+      setError('请选择一个模型');
       return;
     }
 
@@ -112,19 +146,29 @@ const GeneratePage: React.FC = () => {
     setIsGenerating(true);
     setError('');
 
-    const api = new GeekaiApi(config.apiKey);
+    const api = new VideoApi(activePlatform);
 
     for (const prompt of validPrompts) {
       for (let i = 0; i < generationCount; i++) {
         try {
           const request: VideoGenerationRequest = {
-            model: config.defaultModel,
+            model: selectedModel,
             prompt: prompt.trim(),
             async: true,
-            aspect_ratio: config.aspectRatio,
-            resolution: config.resolution,
-            duration: config.duration,
+            aspect_ratio: aspectRatio,
+            resolution: resolution,
+            duration: duration,
           };
+
+          if (activePlatform?.enableEnhancePrompt !== undefined) {
+            request.enhance_prompt = enhancePrompt;
+          }
+          if (activePlatform?.enableUpsample !== undefined) {
+            request.enable_upsample = enableUpsample;
+          }
+          if (activePlatform?.enableWatermark !== undefined) {
+            request.watermark = watermark;
+          }
 
           if (mode === 'image' && images[0]?.url) {
             request.image = images[0].url;
@@ -140,7 +184,7 @@ const GeneratePage: React.FC = () => {
           const task = addTask({
             id: response.task_id,
             prompt: prompt.trim(),
-            model: config.defaultModel,
+            model: selectedModel,
             mode,
             count: generationCount,
             image_url: typeof request.image === 'string' ? request.image : undefined,
@@ -164,9 +208,9 @@ const GeneratePage: React.FC = () => {
                 });
 
                 if (result.task_status === 'succeed' && videoUrl && config.autoDownload && config.downloadPath) {
-                  if ((window as any).electronAPI) {
+                  if (window.electronAPI) {
                     try {
-                      await (window as any).electronAPI.downloadFile(videoUrl, config.downloadPath);
+                      await window.electronAPI.downloadFile(videoUrl, config.downloadPath);
                       updateTask(task.id, { downloaded: true });
                       console.log(`视频 ${task.id} 已自动下载到: ${config.downloadPath}`);
                     } catch (downloadErr) {
@@ -197,11 +241,35 @@ const GeneratePage: React.FC = () => {
     setTailImage(null);
   };
 
+  const supportedModels = getSupportedModels();
+  const currentModelInfo = activePlatform?.models.find(m => m.id === selectedModel);
+
   return (
     <div className="p-6">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-800">视频生成</h2>
+          <div className="relative">
+            <select
+              value={activePlatform?.id || ''}
+              onChange={(e) => {
+                const platformId = e.target.value;
+                if (platformId) {
+                  setActivePlatform(platformId);
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 font-medium border-0 focus:ring-2 focus:ring-blue-300 cursor-pointer appearance-none pr-8"
+            >
+              {config.platforms.map(platform => (
+                <option key={platform.id} value={platform.id}>
+                  {platform.name}
+                </option>
+              ))}
+            </select>
+            <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
 
         {error && (
@@ -235,6 +303,10 @@ const GeneratePage: React.FC = () => {
                     setMode(m.value);
                     setImages([]);
                     setTailImage(null);
+                    const model = supportedModels[0]?.id;
+                    if (model) {
+                      setSelectedModel(model);
+                    }
                   }}
                   className={`flex flex-col items-center gap-2 px-4 py-4 rounded-lg border-2 transition-all ${
                     mode === m.value
@@ -256,32 +328,121 @@ const GeneratePage: React.FC = () => {
                 ({mode === 'text' ? '文生视频' : '图生视频'})
               </span>
             </h3>
-            <div className="grid grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">模型</label>
-                <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">
-                  {config.defaultModel}
-                </div>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  {supportedModels.map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.label || model.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">宽高比</label>
-                <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">
-                  {config.aspectRatio}
-                </div>
+                <select
+                  value={aspectRatio}
+                  onChange={(e) => setAspectRatio(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  {aspectRatios.map(ratio => (
+                    <option key={ratio.value} value={ratio.value}>{ratio.label}</option>
+                  ))}
+                </select>
               </div>
+              {!['apizzz', 'apizzz-openai'].includes(activePlatform?.id || '') && (
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">分辨率</label>
-                <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">
-                  {config.resolution}
-                </div>
+                <select
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  {resolutions.map(res => (
+                    <option key={res.value} value={res.value}>{res.label}</option>
+                  ))}
+                </select>
               </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">视频时长</label>
-                <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700">
-                  {config.duration}秒
+                <div className="flex gap-2">
+                  {durations.map(dur => (
+                    <button
+                      key={dur}
+                      onClick={() => setDuration(dur)}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                        duration === dur
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {dur}秒
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
+            
+            {(activePlatform?.enableEnhancePrompt || activePlatform?.enableUpsample || activePlatform?.enableWatermark) && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">高级选项</h4>
+                <div className="flex flex-wrap gap-6">
+                  {activePlatform?.enableEnhancePrompt && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={enhancePrompt}
+                        onChange={(e) => setEnhancePrompt(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">提示词增强（中文转英文）</span>
+                    </label>
+                  )}
+                  {activePlatform?.enableUpsample && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={enableUpsample}
+                        onChange={(e) => setEnableUpsample(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">超分</span>
+                    </label>
+                  )}
+                  {activePlatform?.enableWatermark && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={watermark}
+                        onChange={(e) => setWatermark(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">添加水印</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {currentModelInfo && currentModelInfo.supportedModes.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="text-xs text-gray-500">当前模型支持:</span>
+                {currentModelInfo.supportedModes.map(m => (
+                  <span
+                    key={m}
+                    className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded"
+                  >
+                    {modes.find(mode => mode.value === m)?.label || m}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {(mode === 'image' || mode === 'imageTail' || mode === 'multiImage') && (
@@ -440,7 +601,7 @@ const GeneratePage: React.FC = () => {
 
           <button
             onClick={handleGenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || !selectedModel}
             className="w-full py-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating ? (

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { Task } from '../types';
-import GeekaiApi from '../services/api';
+import VideoApi from '../services/api';
 import { useConfig } from './ConfigContext';
 
 interface TaskContextType {
@@ -32,14 +32,14 @@ interface TaskProviderProps {
 export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [polling, setPolling] = useState(false);
-  const { config } = useConfig();
+  const { config, activePlatform } = useConfig();
 
   const loadTasks = (): Task[] => {
     try {
       const saved = localStorage.getItem('geekai_tasks');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        const loadedTasks = parsed.map((t: any) => ({
+        const parsed = JSON.parse(saved) as Task[];
+        const loadedTasks = parsed.map((t) => ({
           ...t,
           created_at: typeof t.created_at === 'number' ? t.created_at : new Date(t.created_at).getTime(),
           updated_at: typeof t.updated_at === 'number' ? t.updated_at : new Date(t.updated_at).getTime(),
@@ -103,7 +103,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   };
 
   const pollRunningTasks = useCallback(async () => {
-    if (polling || !config.apiKey) return;
+    if (polling || !activePlatform?.apiKey) return;
     
     const activeTasks = tasks.filter(t => t.status === 'running' || t.status === 'pending');
     if (activeTasks.length === 0) {
@@ -112,7 +112,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
     }
 
     setPolling(true);
-    const api = new GeekaiApi(config.apiKey);
+    const api = new VideoApi(activePlatform);
 
     for (const task of activeTasks) {
       if (task.status === 'succeed' || task.status === 'failed') {
@@ -131,9 +131,9 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
         });
 
         if (result.task_status === 'succeed' && videoUrl && task.auto_download && !task.downloaded && config.downloadPath) {
-          if ((window as any).electronAPI) {
+          if (window.electronAPI) {
             try {
-              await (window as any).electronAPI.downloadFile(videoUrl, config.downloadPath);
+              await window.electronAPI.downloadFile(videoUrl, config.downloadPath);
               updateTask(task.id, { downloaded: true });
               console.log(`视频 ${task.id} 已自动下载`);
             } catch (downloadErr) {
@@ -147,7 +147,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
     }
 
     setPolling(false);
-  }, [tasks, polling, config.apiKey, config.downloadPath]);
+  }, [tasks, polling, activePlatform, config.downloadPath]);
 
   useEffect(() => {
     const loadedTasks = loadTasks();

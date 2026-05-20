@@ -1,16 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import type { Config } from '../types';
+import type { Config, PlatformConfig } from '../types';
+import { defaultPlatforms } from '../types';
 
 const defaultConfig: Config = {
-  apiKey: '',
-  ck: '',
-  defaultModel: 'veo-3.1-fast-generate-preview',
-  aspectRatio: '16:9',
-  resolution: '720p',
-  duration: 4,
   downloadPath: '',
   autoDownload: false,
+  platforms: defaultPlatforms,
+  activePlatformId: 'geekai',
+  uploadCk: '',
 };
 
 interface ConfigContextType {
@@ -20,6 +18,11 @@ interface ConfigContextType {
   saveConfig: () => void;
   loadConfig: () => void;
   saveSuccess: boolean;
+  activePlatform: PlatformConfig;
+  updatePlatform: (platformId: string, updates: Partial<PlatformConfig>) => void;
+  addPlatform: (platform: PlatformConfig) => void;
+  removePlatform: (platformId: string) => void;
+  setActivePlatform: (platformId: string) => void;
 }
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
@@ -49,7 +52,21 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       const saved = localStorage.getItem('geekai_config');
       if (saved) {
         const parsed = JSON.parse(saved);
-        setConfig({ ...defaultConfig, ...parsed });
+        setConfig({ 
+          ...defaultConfig, 
+          ...parsed,
+          platforms: parsed.platforms?.map((p: PlatformConfig) => ({
+            ...p,
+            endpoints: p.endpoints || {
+              createVideo: '/v1/videos/generations',
+              queryTask: '/v1/videos/{id}',
+            },
+            models: p.models?.map((m) => ({
+              ...m,
+              supportedApiFormats: m.supportedApiFormats || ['unified'],
+            })) || [],
+          })) || defaultPlatforms,
+        });
       }
     } catch (error) {
       console.error('加载配置失败:', error);
@@ -61,17 +78,58 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     setSaveSuccess(false);
   };
 
+  const updatePlatform = (platformId: string, updates: Partial<PlatformConfig>) => {
+    setConfig(prev => ({
+      ...prev,
+      platforms: prev.platforms.map(p => 
+        p.id === platformId ? { ...p, ...updates } : p
+      ),
+    }));
+    setSaveSuccess(false);
+  };
+
+  const addPlatform = (platform: PlatformConfig) => {
+    const newPlatform: PlatformConfig = {
+      ...platform,
+      endpoints: platform.endpoints || {
+        createVideo: '/v1/videos/generations',
+        queryTask: '/v1/videos/{id}',
+      },
+    };
+    setConfig(prev => ({
+      ...prev,
+      platforms: [...prev.platforms, newPlatform],
+    }));
+    setSaveSuccess(false);
+  };
+
+  const removePlatform = (platformId: string) => {
+    setConfig(prev => ({
+      ...prev,
+      platforms: prev.platforms.filter(p => p.id !== platformId),
+      activePlatformId: prev.activePlatformId === platformId 
+        ? prev.platforms.find(p => p.id !== platformId)?.id || prev.platforms[0]?.id || '' 
+        : prev.activePlatformId,
+    }));
+    setSaveSuccess(false);
+  };
+
+  const setActivePlatform = (platformId: string) => {
+    setConfig(prev => ({ ...prev, activePlatformId: platformId }));
+    setSaveSuccess(false);
+  };
+
   const saveConfig = async () => {
     try {
       localStorage.setItem('geekai_config', JSON.stringify(config));
       
-      if (config.ck) {
-        if ((window as any).electronAPI) {
-          const result = await (window as any).electronAPI.setCookies(config.ck);
+      if (config.uploadCk) {
+        if (window.electronAPI) {
+          const result = await window.electronAPI.setCookies(config.uploadCk);
           console.log('Cookies set via Electron API:', result);
         } else {
-          const cookieParts = config.ck.split(';');
-          cookieParts.forEach(part => {
+          const cookieParts = config.uploadCk.split(';');
+          cookieParts.forEach((part: string) => {
             const trimmed = part.trim();
             if (trimmed) {
               const [name, ...valueParts] = trimmed.split('=');
@@ -92,8 +150,26 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     }
   };
 
+  const activePlatform = useMemo(() => {
+    return config.platforms.find(p => p.id === config.activePlatformId) || config.platforms[0];
+  }, [config.platforms, config.activePlatformId]);
+
   return (
-    <ConfigContext.Provider value={{ config, setConfig, updateConfig, saveConfig, loadConfig, saveSuccess }}>
+    <ConfigContext.Provider 
+      value={{ 
+        config, 
+        setConfig, 
+        updateConfig, 
+        saveConfig, 
+        loadConfig, 
+        saveSuccess,
+        activePlatform,
+        updatePlatform,
+        addPlatform,
+        removePlatform,
+        setActivePlatform,
+      }}
+    >
       {children}
     </ConfigContext.Provider>
   );

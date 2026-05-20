@@ -4,7 +4,7 @@ class ImageUploader {
   private baseUrl = 'https://geekai.co';
   private ck: string;
 
-  constructor(ck: string) {
+  constructor(ck: string = '') {
     this.ck = ck;
   }
 
@@ -117,14 +117,17 @@ class ImageUploader {
     const keyBuffer = new TextEncoder().encode(key);
     const dataBuffer = new TextEncoder().encode(data);
     const blockSize = 64;
-    let paddedKey = new Uint8Array(blockSize);
     
+    let paddedKey: Uint8Array;
     if (keyBuffer.length > blockSize) {
       const hash = this.sha1Fallback(key);
       const hashBytes = new Uint8Array(20);
       for (let i = 0; i < 20; i++) hashBytes[i] = parseInt(hash.substring(i * 2, i * 2 + 2), 16);
-      paddedKey.set(hashBytes);
-    } else paddedKey.set(keyBuffer);
+      paddedKey = hashBytes.slice(0, blockSize);
+    } else {
+      paddedKey = new Uint8Array(blockSize);
+      paddedKey.set(keyBuffer);
+    }
     
     const oKeyPad = new Uint8Array(blockSize);
     const iKeyPad = new Uint8Array(blockSize);
@@ -142,7 +145,7 @@ class ImageUploader {
   }
 
   private async makeRequest(url: string, options: RequestInit): Promise<{ status: number; body: string; headers: Record<string, string> }> {
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
     
     if (electronAPI) {
       return electronAPI.makeRequest(url, {
@@ -268,7 +271,7 @@ class ImageUploader {
     const auth = await this.generateCosSignature(credential, 'PUT', pathname, cosHeaders);
     cosHeaders['Authorization'] = auth;
 
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
     
     if (electronAPI) {
       await electronAPI.uploadToCos(Array.from(new Uint8Array(buffer)), {
