@@ -1,36 +1,131 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Video, Image, Upload, Play, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Video, Image, Upload, Play, Trash2, AlertCircle, Loader2, Plus, Lock } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
 import { useTasks } from '../context/TaskContext';
-import type { GenerationMode, ImageFile, VideoGenerationRequest, ModelInfo } from '../types';
+import type { GenerationMode, VideoGenerationRequest, ModelInfo, ParameterConstraint } from '../types';
 import VideoApi from '../services/api';
 import ImageUploader from '../services/imageUpload';
+import modelConfigManager from '../services/modelConfigManager';
+import type { ModelParameterConfig, ParameterMapping } from '../types/modelConfig';
 
 const GeneratePage: React.FC = () => {
   const { config, activePlatform, setActivePlatform } = useConfig();
   const { addTask, updateTask } = useTasks();
   const [mode, setMode] = useState<GenerationMode>('text');
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [aspectRatio, setAspectRatio] = useState<string>('16:9');
-  const [resolution, setResolution] = useState<string>('720p');
-  const [duration, setDuration] = useState<number>(4);
   const [promptList, setPromptList] = useState<string[]>(['']);
   const [generationCount, setGenerationCount] = useState<number>(1);
-  const [images, setImages] = useState<ImageFile[]>([]);
-  const [tailImage, setTailImage] = useState<ImageFile | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  
-  const [enhancePrompt, setEnhancePrompt] = useState<boolean>(true);
-  const [enableUpsample, setEnableUpsample] = useState<boolean>(true);
-  const [watermark, setWatermark] = useState<boolean>(false);
+
+  const [modelConfig, setModelConfig] = useState<ModelParameterConfig | null>(null);
+  const [customParams, setCustomParams] = useState<Record<string, any>>({});
+  const [modelConstraints, setModelConstraints] = useState<ParameterConstraint[]>([]);
 
   useEffect(() => {
     if (activePlatform) {
       setSelectedModel(activePlatform.defaultModel);
     }
   }, [activePlatform]);
+
+  useEffect(() => {
+    if (selectedModel && activePlatform) {
+      let modelConfigResult = modelConfigManager.getConfigForSystemModel(selectedModel, config.platforms);
+      
+
+      
+      setModelConfig(modelConfigResult);
+      
+      const constraints = modelConfigManager.getModelConstraints(selectedModel, config.platforms);
+      setModelConstraints(constraints);
+      
+      if (modelConfigResult) {
+        const initialParams: Record<string, any> = {};
+        modelConfigResult.parameterMappings.forEach(mapping => {
+          if (mapping.showInUI && mapping.defaultValue !== undefined) {
+            const constraint = constraints.find(c => c.unifiedParam === mapping.unifiedParam);
+            if (constraint?.fixed !== undefined) {
+              initialParams[mapping.unifiedParam] = constraint.fixed;
+            } else if (constraint?.defaultValue !== undefined) {
+              initialParams[mapping.unifiedParam] = constraint.defaultValue;
+            } else {
+              initialParams[mapping.unifiedParam] = mapping.defaultValue;
+            }
+          }
+        });
+        setCustomParams(initialParams);
+      } else {
+        setCustomParams({});
+      }
+    }
+  }, [selectedModel, activePlatform, config.platforms, mode]);
+
+  const getConstraint = (paramName: string): ParameterConstraint | undefined => {
+    return modelConstraints.find(c => c.unifiedParam === paramName);
+  };
+
+  const convertValueByType = (value: any, paramType?: string): any => {
+    if (paramType === 'number') {
+      const num = Number(value);
+      return isNaN(num) ? value : num;
+    } else if (paramType === 'boolean') {
+      if (typeof value === 'boolean') return value;
+      if (value === 'true' || value === '1') return true;
+      if (value === 'false' || value === '0') return false;
+      return Boolean(value);
+    } else if (paramType === 'array') {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [value];
+        } catch {
+          return [value];
+        }
+      }
+      return [value];
+    } else if (paramType === 'object') {
+      if (typeof value === 'object') return value;
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value;
+    }
+    return value;
+  };
+
+  const isParamHidden = (paramName: string): boolean => {
+    const constraint = getConstraint(paramName);
+    if (constraint?.enabled === false) return true;
+    if (constraint?.hidden) return true;
+    if (constraint?.modes && constraint.modes.length > 0 && !constraint.modes.includes(mode)) {
+      return true;
+    }
+    return false;
+  };
+
+  const isParamFixed = (paramName: string): boolean => {
+    const constraint = getConstraint(paramName);
+    return constraint?.fixed !== undefined;
+  };
+
+  const getFixedValue = (paramName: string): any => {
+    const constraint = getConstraint(paramName);
+    return constraint?.fixed;
+  };
+
+  const getFilteredEnumValues = (param: ParameterMapping): any[] => {
+    const constraint = getConstraint(param.unifiedParam);
+    if (constraint?.enumValues && constraint.enumValues.length > 0) {
+      return constraint.enumValues;
+    }
+    return param.enumValues || [];
+  };
 
   const modes: { value: GenerationMode; label: string; icon: React.ReactNode }[] = [
     { value: 'text', label: '文生视频', icon: <Video className="w-4 h-4" /> },
@@ -39,65 +134,42 @@ const GeneratePage: React.FC = () => {
     { value: 'multiImage', label: '多图生成', icon: <Image className="w-4 h-4" /> },
   ];
 
-  const aspectRatios = [
-    { value: '16:9', label: '横屏 16:9' },
-    { value: '9:16', label: '竖屏 9:16' },
-  ];
-
-  const resolutions = [
-    { value: '720p', label: '标清 720p' },
-    { value: '1080p', label: '高清 1080p' },
-    { value: '4k', label: '超清 4K' },
-  ];
-
-  const durations = [4, 6, 8];
-
   const getSupportedModels = (): ModelInfo[] => {
     if (!activePlatform?.models) return [];
     return activePlatform.models.filter(model => model.supportedModes.includes(mode));
   };
 
-  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    
-    if (!config.uploadCk) {
-      setError('请先在配置页面设置图床Cookie (CK)');
-      return;
-    }
-
-    const uploader = new ImageUploader(config.uploadCk);
-    const newImages: ImageFile[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      try {
-        const result = await uploader.uploadImage(file);
-        newImages.push({
-          file,
-          url: result.url,
-          name: file.name,
-        });
-      } catch (err) {
-        console.error('上传失败:', err);
-        setError(`图片上传失败: ${(err as Error).message}`);
-      }
-    }
-
-    if (mode === 'imageTail' && !tailImage) {
-      setTailImage(newImages[0]);
-    } else {
-      setImages(prev => [...prev, ...newImages]);
-    }
-    e.target.value = '';
-  }, [config.uploadCk, mode, tailImage]);
-
-  const handleRemoveImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
+  const getVisibleParams = (): ParameterMapping[] => {
+    if (!modelConfig) return [];
+    return modelConfig.parameterMappings.filter(m => m.showInUI && !isParamHidden(m.unifiedParam));
   };
 
-  const handleRemoveTailImage = () => {
-    setTailImage(null);
+  const getSelectParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'select' && (!m.presetOptions || m.presetOptions.length === 0));
+  };
+
+  const getPresetParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.presetOptions && m.presetOptions.length > 0);
+  };
+
+  const getCheckboxParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'checkbox');
+  };
+
+  const getInputParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'input');
+  };
+
+  const getNumberParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'number');
+  };
+
+  const getTextareaParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'textarea');
+  };
+
+  const getImageParams = (): ParameterMapping[] => {
+    return getVisibleParams().filter(m => m.uiType === 'image' || m.uiType === 'image-multi');
   };
 
   const handleAddPrompt = () => {
@@ -114,6 +186,10 @@ const GeneratePage: React.FC = () => {
     const newList = [...promptList];
     newList[index] = value;
     setPromptList(newList);
+  };
+
+  const handleCustomParamChange = (paramName: string, value: any) => {
+    setCustomParams(prev => ({ ...prev, [paramName]: value }));
   };
 
   const handleGenerate = async () => {
@@ -133,14 +209,21 @@ const GeneratePage: React.FC = () => {
       return;
     }
 
-    if ((mode === 'image' || mode === 'imageTail' || mode === 'multiImage') && images.length === 0) {
-      setError('请上传至少一张图片');
-      return;
-    }
-
-    if (mode === 'imageTail' && !tailImage) {
-      setError('请上传尾帧图片');
-      return;
+    const imageParamsList = getImageParams();
+    const requiresImage = imageParamsList.length > 0;
+    
+    if (requiresImage) {
+      const hasUploadedImage = imageParamsList.some(param => {
+        const value = customParams[param.unifiedParam];
+        if (Array.isArray(value)) {
+          return value.length > 0 && value.some(v => v && v.trim() !== '');
+        }
+        return value && typeof value === 'string' && value.trim() !== '';
+      });
+      if (!hasUploadedImage) {
+        setError('请上传至少一张图片');
+        return;
+      }
     }
 
     setIsGenerating(true);
@@ -155,31 +238,19 @@ const GeneratePage: React.FC = () => {
             model: selectedModel,
             prompt: prompt.trim(),
             async: true,
-            aspect_ratio: aspectRatio,
-            resolution: resolution,
-            duration: duration,
           };
 
-          if (activePlatform?.enableEnhancePrompt !== undefined) {
-            request.enhance_prompt = enhancePrompt;
-          }
-          if (activePlatform?.enableUpsample !== undefined) {
-            request.enable_upsample = enableUpsample;
-          }
-          if (activePlatform?.enableWatermark !== undefined) {
-            request.watermark = watermark;
-          }
-
-          if (mode === 'image' && images[0]?.url) {
-            request.image = images[0].url;
-          } else if (mode === 'imageTail' && images[0]?.url && tailImage?.url) {
-            request.image = images[0].url;
-            request.image_tail = tailImage.url;
-          } else if (mode === 'multiImage') {
-            request.image = images.map(img => img.url).filter(Boolean) as string[];
+          if (modelConfig) {
+            modelConfig.parameterMappings.forEach(mapping => {
+              if (mapping.showInUI && !isParamHidden(mapping.unifiedParam) && customParams[mapping.unifiedParam] !== undefined) {
+                const value = convertValueByType(customParams[mapping.unifiedParam], mapping.paramType);
+                (request as any)[mapping.unifiedParam] = value;
+              }
+            });
           }
 
-          const response = await api.generateVideo(request);
+          const constrainedRequest = modelConfigManager.applyConstraintsToRequest(request, selectedModel, config.platforms, modelConfig ?? undefined) as VideoGenerationRequest;
+          const response = await api.generateVideo(constrainedRequest);
           
           const task = addTask({
             id: response.task_id,
@@ -237,385 +308,556 @@ const GeneratePage: React.FC = () => {
     setSuccessMessage(`成功创建 ${createdTasks} 个任务，正在后台生成中...`);
     setTimeout(() => setSuccessMessage(''), 5000);
     setPromptList(['']);
-    setImages([]);
-    setTailImage(null);
   };
 
   const supportedModels = getSupportedModels();
   const currentModelInfo = activePlatform?.models.find(m => m.id === selectedModel);
+  const selectParams = getSelectParams();
+  const presetParams = getPresetParams();
+  const checkboxParams = getCheckboxParams();
+  const inputParams = getInputParams();
+  const numberParams = getNumberParams();
+  const textareaParams = getTextareaParams();
+  const imageParams = getImageParams();
+
+  const buildPreviewRequest = useMemo(() => {
+    if (!selectedModel || !activePlatform) return null;
+
+    const request: Record<string, any> = {
+      model: selectedModel,
+      prompt: promptList.filter(p => p.trim()).join('\n'),
+      async: true,
+    };
+
+    if (modelConfig) {
+      modelConfig.parameterMappings.forEach(mapping => {
+        if (mapping.showInUI && !isParamHidden(mapping.unifiedParam) && customParams[mapping.unifiedParam] !== undefined) {
+          const value = convertValueByType(customParams[mapping.unifiedParam], mapping.paramType);
+          request[mapping.unifiedParam] = value;
+        }
+      });
+
+      // 应用约束后直接返回，字段名即为最终请求字段名，不做 modelParam 映射
+      const constrained = modelConfigManager.applyConstraintsToRequest(
+        request as any,
+        selectedModel,
+        config.platforms,
+        modelConfig
+      );
+      return constrained;
+    }
+
+    return request;
+  }, [selectedModel, activePlatform, promptList, modelConfig, customParams, modelConstraints, config.platforms]);
 
   return (
-    <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">视频生成</h2>
-          <div className="relative">
-            <select
-              value={activePlatform?.id || ''}
-              onChange={(e) => {
-                const platformId = e.target.value;
-                if (platformId) {
-                  setActivePlatform(platformId);
-                }
-              }}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 font-medium border-0 focus:ring-2 focus:ring-blue-300 cursor-pointer appearance-none pr-8"
-            >
-              {config.platforms.map(platform => (
-                <option key={platform.id} value={platform.id}>
-                  {platform.name}
-                </option>
-              ))}
-            </select>
-            <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+    <div className="p-4 min-h-screen bg-gray-50">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-gray-800">视频生成</h2>
+        <div className="relative">
+          <select
+            value={activePlatform?.id || ''}
+            onChange={(e) => {
+              const platformId = e.target.value;
+              if (platformId) {
+                setActivePlatform(platformId);
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg text-sm text-blue-700 font-medium border-0 focus:ring-2 focus:ring-blue-300 cursor-pointer appearance-none pr-8"
+          >
+            {config.platforms.map(platform => (
+              <option key={platform.id} value={platform.id}>
+                {platform.name}
+              </option>
+            ))}
+          </select>
+          <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-red-700 text-sm">
+            <AlertCircle className="w-4 h-4" />
+            <span>{error}</span>
           </div>
         </div>
+      )}
 
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-red-700">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-            </div>
+      {successMessage && (
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-green-700 text-sm">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{successMessage}</span>
           </div>
-        )}
+        </div>
+      )}
 
-        {successMessage && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-green-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>{successMessage}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">生成模式</h3>
-            <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-12 lg:col-span-8 space-y-4">
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <h3 className="text-base font-semibold text-gray-700 mb-3">生成模式</h3>
+            <div className="flex gap-2">
               {modes.map(m => (
                 <button
                   key={m.value}
                   onClick={() => {
-                    setMode(m.value);
-                    setImages([]);
-                    setTailImage(null);
-                    const model = supportedModels[0]?.id;
-                    if (model) {
-                      setSelectedModel(model);
+                    const newMode = m.value;
+                    setMode(newMode);
+                    const filteredModels = activePlatform?.models.filter(model => model.supportedModes.includes(newMode)) || [];
+                    const currentModelId = typeof selectedModel === 'string' ? selectedModel : (selectedModel as any)?.id || '';
+                    const existingModel = filteredModels.find(model => model.id === currentModelId);
+                    const newModelId = existingModel?.id || filteredModels[0]?.id;
+                    if (newModelId) {
+                      setSelectedModel(newModelId);
                     }
                   }}
-                  className={`flex flex-col items-center gap-2 px-4 py-4 rounded-lg border-2 transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-all text-sm font-medium ${
                     mode === m.value
                       ? 'border-blue-500 bg-blue-50 text-blue-600'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600 bg-white'
                   }`}
                 >
                   {m.icon}
-                  <span className="text-sm font-medium">{m.label}</span>
+                  <span>{m.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">
-              生成参数
-              <span className="text-sm font-normal text-gray-400 ml-2">
-                ({mode === 'text' ? '文生视频' : '图生视频'})
-              </span>
-            </h3>
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">模型</label>
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-gray-700">生成参数</h3>
+              {currentModelInfo && currentModelInfo.supportedModes.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-500">模型支持:</span>
+                  {currentModelInfo.supportedModes.map(m => (
+                    <span
+                      key={m}
+                      className="text-sm px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded"
+                    >
+                      {modes.find(mode => mode.value === m)?.label || m}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+              
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">模型</label>
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white min-w-[200px]"
                 >
                   {supportedModels.map(model => (
                     <option key={model.id} value={model.id}>
-                      {model.label || model.name}
+                      {model.id} {model.price && `(${model.price})`}
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">宽高比</label>
-                <select
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                >
-                  {aspectRatios.map(ratio => (
-                    <option key={ratio.value} value={ratio.value}>{ratio.label}</option>
-                  ))}
-                </select>
-              </div>
-              {!['apizzz', 'apizzz-openai'].includes(activePlatform?.id || '') && (
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">分辨率</label>
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                >
-                  {resolutions.map(res => (
-                    <option key={res.value} value={res.value}>{res.label}</option>
-                  ))}
-                </select>
-              </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">视频时长</label>
-                <div className="flex gap-2">
-                  {durations.map(dur => (
-                    <button
-                      key={dur}
-                      onClick={() => setDuration(dur)}
-                      className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                        duration === dur
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      {dur}秒
-                    </button>
-                  ))}
-                </div>
-              </div>
+              
+              {[...selectParams, ...inputParams, ...numberParams].map(param => {
+                const fixed = isParamFixed(param.unifiedParam);
+                const fixedVal = getFixedValue(param.unifiedParam);
+                const enumValues = getFilteredEnumValues(param);
+                const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                const minWidth = param.uiType === 'select' ? 'min-w-[150px]' : '';
+
+                return (
+                  <div key={param.unifiedParam} className={minWidth}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1 truncate">
+                      {param.uiLabel || param.description || param.unifiedParam}
+                      {fixed && <Lock className="w-3 h-3 text-gray-400 flex-shrink-0" />}
+                    </label>
+                    {param.uiType === 'select' ? (
+                      <select
+                        value={currentValue}
+                        onChange={(e) => !fixed && handleCustomParamChange(param.unifiedParam, e.target.value)}
+                        disabled={fixed}
+                        className={`px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white min-w-[150px] ${
+                          fixed ? 'bg-gray-100 cursor-not-allowed border-gray-200' : 'border-gray-300'
+                        }`}
+                      >
+                        {enumValues.length > 0 ? (
+                          enumValues.map((val: any) => (
+                            <option key={String(val)} value={val}>{val}</option>
+                          ))
+                        ) : (
+                          <option value={currentValue}>
+                            {currentValue || '请选择'}
+                          </option>
+                        )}
+                      </select>
+                    ) : param.uiType === 'input' ? (
+                      <input
+                        type="text"
+                        value={currentValue}
+                        onChange={(e) => !fixed && handleCustomParamChange(param.unifiedParam, e.target.value)}
+                        disabled={fixed}
+                        className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                          fixed ? 'bg-gray-100 cursor-not-allowed border-gray-200' : 'border-gray-300'
+                        }`}
+                        placeholder={param.description}
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        value={currentValue}
+                        onChange={(e) => !fixed && handleCustomParamChange(param.unifiedParam, parseFloat(e.target.value))}
+                        disabled={fixed}
+                        min={getConstraint(param.unifiedParam)?.min}
+                        max={getConstraint(param.unifiedParam)?.max}
+                        step={getConstraint(param.unifiedParam)?.step}
+                        className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                          fixed ? 'bg-gray-100 cursor-not-allowed border-gray-200' : 'border-gray-300'
+                        }`}
+                        placeholder={param.description}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            
-            {(activePlatform?.enableEnhancePrompt || activePlatform?.enableUpsample || activePlatform?.enableWatermark) && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">高级选项</h4>
-                <div className="flex flex-wrap gap-6">
-                  {activePlatform?.enableEnhancePrompt && (
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={enhancePrompt}
-                        onChange={(e) => setEnhancePrompt(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">提示词增强（中文转英文）</span>
-                    </label>
-                  )}
-                  {activePlatform?.enableUpsample && (
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={enableUpsample}
-                        onChange={(e) => setEnableUpsample(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">超分</span>
-                    </label>
-                  )}
-                  {activePlatform?.enableWatermark && (
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={watermark}
-                        onChange={(e) => setWatermark(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">添加水印</span>
-                    </label>
-                  )}
-                </div>
+              
+            {presetParams.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {presetParams.map(param => {
+                  const fixed = isParamFixed(param.unifiedParam);
+                  const fixedVal = getFixedValue(param.unifiedParam);
+                  const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                  
+                  return (
+                    <div key={param.unifiedParam}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                        {param.uiLabel || param.description || param.unifiedParam}
+                        {fixed && <Lock className="w-3 h-3 text-gray-400" />}
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {param.presetOptions?.map((option, index) => (
+                          <button
+                            key={index}
+                            onClick={() => !fixed && handleCustomParamChange(param.unifiedParam, option.value)}
+                            disabled={fixed}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition ${
+                              currentValue === option.value
+                                ? 'bg-blue-600 text-white'
+                                : fixed
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            
-            {currentModelInfo && currentModelInfo.supportedModes.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-500">当前模型支持:</span>
-                {currentModelInfo.supportedModes.map(m => (
-                  <span
-                    key={m}
-                    className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded"
-                  >
-                    {modes.find(mode => mode.value === m)?.label || m}
-                  </span>
-                ))}
+              
+            {textareaParams.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {textareaParams.map(param => {
+                  const fixed = isParamFixed(param.unifiedParam);
+                  const fixedVal = getFixedValue(param.unifiedParam);
+                  const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                  
+                  return (
+                    <div key={param.unifiedParam}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                        {param.uiLabel || param.description || param.unifiedParam}
+                        {fixed && <Lock className="w-3 h-3 text-gray-400" />}
+                      </label>
+                      <textarea
+                        value={currentValue}
+                        onChange={(e) => !fixed && handleCustomParamChange(param.unifiedParam, e.target.value)}
+                        disabled={fixed}
+                        rows={2}
+                        className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y ${
+                          fixed ? 'bg-gray-100 cursor-not-allowed border-gray-200' : 'border-gray-300'
+                        }`}
+                        placeholder={param.description}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+              
+            {imageParams.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {imageParams.map(param => {
+                  const isSingle = param.paramType === 'string';
+                  const currentValue = customParams[param.unifiedParam];
+                  const imageUrls: string[] = isSingle
+                    ? (currentValue ? [currentValue as string] : [])
+                    : (Array.isArray(currentValue) ? currentValue : (currentValue ? [currentValue as string] : []));
+
+                  return (
+                    <div key={param.unifiedParam}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        {param.uiLabel || param.description || param.unifiedParam}
+                        {isSingle
+                          ? (imageUrls.length > 0 ? ' (已上传 1 张)' : '')
+                          : (imageUrls.length > 0 ? ` (已上传 ${imageUrls.length} 张)` : '')}
+                      </label>
+                      <label
+                        htmlFor={`param-image-${param.unifiedParam}`}
+                        className="block border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                        <p className="text-gray-500 text-sm">
+                          {isSingle ? '点击上传图片（重复上传将覆盖）' : '点击上传图片（支持多选）'}
+                        </p>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          multiple={!isSingle}
+                          onChange={(e) => {
+                            const files = e.target.files;
+                            if (!files || files.length === 0 || !config.uploadCk) return;
+
+                            const uploader = new ImageUploader(config.uploadCk);
+
+                            if (isSingle) {
+                              uploader.uploadImage(files[0]).then(result => {
+                                handleCustomParamChange(param.unifiedParam, result.url);
+                              }).catch(err => {
+                                setError(`图片上传失败: ${(err as Error).message}`);
+                              });
+                            } else {
+                              const uploadPromises = Array.from(files).map(file =>
+                                uploader.uploadImage(file).then(result => result.url)
+                              );
+                              Promise.all(uploadPromises).then(newUrls => {
+                                const updatedImages = [...imageUrls, ...newUrls];
+                                handleCustomParamChange(param.unifiedParam, updatedImages);
+                              }).catch(err => {
+                                setError(`图片上传失败: ${(err as Error).message}`);
+                              });
+                            }
+                          }}
+                          className="hidden"
+                          id={`param-image-${param.unifiedParam}`}
+                        />
+                      </label>
+                      {imageUrls.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {imageUrls.map((url, index) => (
+                            <div key={index} className="relative">
+                              <img
+                                src={url}
+                                alt={`已上传 ${index + 1}`}
+                                className="w-12 h-12 object-cover rounded"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (isSingle) {
+                                    handleCustomParamChange(param.unifiedParam, '');
+                                  } else {
+                                    const updatedImages = imageUrls.filter((_, i) => i !== index);
+                                    handleCustomParamChange(param.unifiedParam, updatedImages);
+                                  }
+                                }}
+                                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full hover:bg-red-600 flex items-center justify-center"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {!isSingle && (
+                            <button
+                              onClick={() => handleCustomParamChange(param.unifiedParam, [])}
+                              className="text-sm text-gray-500 hover:text-gray-600 self-end"
+                            >
+                              清空全部
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+              
+            {checkboxParams.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-4">
+                {checkboxParams.map(param => {
+                  const fixed = isParamFixed(param.unifiedParam);
+                  const fixedVal = getFixedValue(param.unifiedParam);
+                  const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? false);
+                  
+                  return (
+                    <label key={param.unifiedParam} className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={currentValue}
+                        onChange={(e) => !fixed && handleCustomParamChange(param.unifiedParam, e.target.checked)}
+                        disabled={fixed}
+                        className={`w-4 h-4 rounded focus:ring-blue-500 ${
+                          fixed ? 'bg-gray-200 cursor-not-allowed' : 'text-blue-600'
+                        }`}
+                      />
+                      <span className={`text-sm ${fixed ? 'text-gray-500' : 'text-gray-700'}`}>
+                        {param.uiLabel || param.description || param.unifiedParam}
+                        {fixed && <Lock className="w-3 h-3 inline ml-0.5 text-gray-400" />}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {(mode === 'image' || mode === 'imageTail' || mode === 'multiImage') && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                {mode === 'imageTail' ? '首帧图片' : '参考图片'}
-                <span className="text-sm font-normal text-gray-400 ml-2">
-                  ({mode === 'multiImage' ? '最多3张' : '1张'})
-                </span>
-              </h3>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="image-upload"
-                  multiple={mode === 'multiImage'}
-                />
-                <label
-                  htmlFor="image-upload"
-                  className="cursor-pointer flex flex-col items-center gap-2 text-gray-500 hover:text-blue-600"
-                >
-                  <Upload className="w-10 h-10" />
-                  <span>点击或拖拽上传图片</span>
-                </label>
-              </div>
-              {images.length > 0 && (
-                <div className="mt-4 grid grid-cols-3 gap-4">
-                  {images.map((img, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={img.url || URL.createObjectURL(img.file)}
-                        alt={img.name}
-                        className="w-full h-32 object-cover rounded-lg"
-                      />
-                      <button
-                        onClick={() => handleRemoveImage(index)}
-                        className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <p className="text-sm text-gray-500 mt-1 truncate">{img.name}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
-          {mode === 'imageTail' && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">尾帧图片</h3>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="tail-image-upload"
-                />
-                <label
-                  htmlFor="tail-image-upload"
-                  className="cursor-pointer flex flex-col items-center gap-2 text-gray-500 hover:text-blue-600"
-                >
-                  <Upload className="w-10 h-10" />
-                  <span>点击或拖拽上传尾帧图片</span>
-                </label>
-              </div>
-              {tailImage && (
-                <div className="mt-4">
-                  <div className="relative inline-block">
-                    <img
-                      src={tailImage.url || URL.createObjectURL(tailImage.file)}
-                      alt={tailImage.name}
-                      className="w-32 h-32 object-cover rounded-lg"
-                    />
+
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-gray-700">提示词</h3>
+              <button
+                onClick={handleAddPrompt}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                添加
+              </button>
+            </div>
+            <div className="space-y-2">
+              {promptList.map((prompt, index) => (
+                <div key={index} className="flex gap-2">
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => {
+                      handleUpdatePrompt(index, e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = e.target.scrollHeight + 'px';
+                    }}
+                    placeholder={`输入提示词 ${index + 1}...`}
+                    rows={2}
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none overflow-hidden"
+                    style={{ height: 'auto' }}
+                  />
+                  {promptList.length > 1 && (
                     <button
-                      onClick={handleRemoveTailImage}
-                      className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full"
+                      onClick={() => handleRemovePrompt(index)}
+                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-1">{tailImage.name}</p>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-700">
-                  Prompt列表
-                  <span className="text-sm font-normal text-gray-400 ml-2">
-                    (点击添加多个Prompt，支持包含换行符)
-                  </span>
-                </h3>
-                <button
-                  onClick={handleAddPrompt}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  添加Prompt
-                </button>
-              </div>
-              <div className="space-y-3">
-                {promptList.map((prompt, index) => (
-                  <div key={index} className="relative group">
-                    <textarea
-                      value={prompt}
-                      onChange={(e) => handleUpdatePrompt(index, e.target.value)}
-                      className="w-full min-h-[80px] px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y font-mono text-sm"
-                      placeholder={`输入第 ${index + 1} 个Prompt...`}
-                    />
-                    {promptList.length > 1 && (
-                      <button
-                        onClick={() => handleRemovePrompt(index)}
-                        className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="删除此Prompt"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
-                <span>
-                  {promptList.filter(p => p.trim()).length} 个任务 x {generationCount} 次 = {promptList.filter(p => p.trim()).length * generationCount} 个任务待生成
-                </span>
-                <button
-                  onClick={() => setPromptList([''])}
-                  className="text-red-500 hover:text-red-600"
-                >
-                  清空全部
-                </button>
-              </div>
-            </div>
-            <div className="w-48">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">生成次数</h3>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={generationCount}
-                onChange={(e) => setGenerationCount(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-              <p className="text-sm text-gray-500 mt-2">每个Prompt生成次数</p>
+              ))}
             </div>
           </div>
+        </div>
 
-          <button
-            onClick={handleGenerate}
-            disabled={isGenerating || !selectedModel}
-            className="w-full py-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                正在生成...
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5" />
-                开始生成 ({promptList.filter(p => p.trim()).length} 个任务)
-              </>
-            )}
-          </button>
+        <div className="col-span-12 lg:col-span-4">
+          <div className="bg-white rounded-lg shadow-sm p-4 sticky top-4">
+            <h3 className="text-base font-semibold text-gray-700 mb-3">生成控制</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">生成数量</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setGenerationCount(Math.max(1, generationCount - 1))}
+                    className="w-9 h-9 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors text-base font-medium"
+                  >
+                    -
+                  </button>
+                  <span className="w-12 text-center font-medium text-base">{generationCount}</span>
+                  <button
+                    onClick={() => setGenerationCount(Math.min(10, generationCount + 1))}
+                    className="w-9 h-9 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors text-base font-medium"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t">
+                <button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all text-base ${
+                    isGenerating
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/25'
+                  }`}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      生成视频
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {currentModelInfo && (
+                <div className="pt-3 border-t">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">当前模型信息</h4>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <div className="flex justify-between">
+                      <span>模型ID:</span>
+                      <span className="font-mono">{currentModelInfo.id}</span>
+                    </div>
+                    {currentModelInfo.price && (
+                      <div className="flex justify-between">
+                        <span>价格:</span>
+                        <span className="text-green-600">{currentModelInfo.price}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>支持模式:</span>
+                      <span>{currentModelInfo.supportedModes.length} 种</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-gray-700">请求JSON预览</h4>
+                  <button
+                    onClick={() => {
+                      if (buildPreviewRequest) {
+                        navigator.clipboard.writeText(JSON.stringify(buildPreviewRequest, null, 2));
+                        setSuccessMessage('已复制到剪贴板');
+                        setTimeout(() => setSuccessMessage(''), 2000);
+                      }
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    复制
+                  </button>
+                </div>
+                <div className="bg-gray-900 rounded-lg p-3 overflow-auto max-h-[300px]">
+                  <pre className="text-xs text-green-400 whitespace-pre font-mono">
+                    {buildPreviewRequest ? JSON.stringify(buildPreviewRequest, null, 2) : '请选择模型'}
+                  </pre>
+                </div>
+                <div className="mt-2 text-xs text-gray-500">
+                  <span className="text-gray-400">注：</span>
+                  实际请求时用户输入的参数将替换此处留空的值
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

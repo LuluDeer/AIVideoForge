@@ -10,7 +10,7 @@ interface TaskContextType {
   updateTask: (id: string, updates: Partial<Task>) => void;
   removeTask: (id: string) => void;
   clearTasks: () => void;
-  loadTasks: () => void;
+  loadTasks: () => Task[];
   saveTasks: () => void;
   pollRunningTasks: () => void;
 }
@@ -53,16 +53,15 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
     return [];
   };
 
-  const saveTasks = () => {
+  const saveTasksData = (data: Task[]) => {
     try {
-      localStorage.setItem('geekai_tasks', JSON.stringify(tasks));
-      console.log(`=== 保存任务 ===`);
-      console.log(`保存了 ${tasks.length} 个任务`);
-      tasks.forEach(t => console.log(`任务 ${t.id}: 状态=${t.status}, 已下载=${t.downloaded}`));
+      localStorage.setItem('geekai_tasks', JSON.stringify(data));
     } catch (error) {
       console.error('保存任务失败:', error);
     }
   };
+
+  const saveTasks = () => saveTasksData(tasks);
 
   const addTask = (taskData: Omit<Task, 'created_at' | 'updated_at'>): Task => {
     const newTask: Task = {
@@ -70,36 +69,35 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
       created_at: Date.now(),
       updated_at: Date.now(),
     };
-    setTasks(prev => [newTask, ...prev]);
-    saveTasks();
+    setTasks(prev => {
+      const next = [newTask, ...prev];
+      saveTasksData(next);
+      return next;
+    });
     return newTask;
   };
 
   const updateTask = (id: string, updates: Partial<Task>) => {
     setTasks(prev => {
-      const updatedTasks = prev.map(task => {
-        if (task.id === id) {
-          return { ...task, ...updates, updated_at: Date.now() };
-        }
-        return task;
-      });
-      setTimeout(() => {
-        localStorage.setItem('geekai_tasks', JSON.stringify(updatedTasks));
-        console.log(`=== 更新任务 ===`);
-        console.log(`任务 ${id} 更新后: 状态=${updatedTasks.find(t => t.id === id)?.status}, 已下载=${updatedTasks.find(t => t.id === id)?.downloaded}`);
-      }, 0);
-      return updatedTasks;
+      const next = prev.map(task =>
+        task.id === id ? { ...task, ...updates, updated_at: Date.now() } : task
+      );
+      saveTasksData(next);
+      return next;
     });
   };
 
   const removeTask = (id: string) => {
-    setTasks(prev => prev.filter(task => task.id !== id));
-    saveTasks();
+    setTasks(prev => {
+      const next = prev.filter(task => task.id !== id);
+      saveTasksData(next);
+      return next;
+    });
   };
 
   const clearTasks = () => {
     setTasks([]);
-    saveTasks();
+    saveTasksData([]);
   };
 
   const pollRunningTasks = useCallback(async () => {
@@ -151,10 +149,10 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const loadedTasks = loadTasks();
+    setTasks(loadedTasks);
     console.log(`=== 加载任务 ===`);
     console.log(`加载到 ${loadedTasks.length} 个任务`);
     loadedTasks.forEach(t => console.log(`任务 ${t.id}: 状态=${t.status}, 已下载=${t.downloaded}, 视频URL=${t.video_url ? '有' : '无'}`));
-    setTasks(loadedTasks);
     
     const activeTasks = loadedTasks.filter(t => t.status === 'running' || t.status === 'pending');
     console.log(`活跃任务数: ${activeTasks.length}`);

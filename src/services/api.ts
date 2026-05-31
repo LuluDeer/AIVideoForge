@@ -35,69 +35,25 @@ class VideoApi {
   }
 
   private buildUnifiedRequest(request: VideoGenerationRequest): Record<string, unknown> {
-    const unifiedRequest: Record<string, unknown> = {
-      model: request.model,
-      prompt: request.prompt,
-    };
-
-    if (this.platform.id === 'geekai') {
-      unifiedRequest.async = request.async ?? true;
+    // 直接透传 request 中所有有值的字段
+    const payload: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(request)) {
+      if (value !== undefined && value !== null && value !== '') {
+        payload[key] = value;
+      }
     }
-
-    if (this.platform.enableEnhancePrompt !== undefined) {
-      unifiedRequest.enhance_prompt = request.enhance_prompt ?? true;
-    }
-    if (this.platform.enableUpsample !== undefined) {
-      unifiedRequest.enable_upsample = request.enable_upsample ?? true;
-    }
-    
-    if (request.aspect_ratio) {
-      unifiedRequest.aspect_ratio = request.aspect_ratio;
-    }
-    if (request.resolution && !['apizzz', 'apizzz-openai'].includes(this.platform.id)) {
-      unifiedRequest.resolution = request.resolution;
-    }
-    if (request.duration) {
-      unifiedRequest.duration = request.duration;
-    }
-    
-    if (Array.isArray(request.image)) {
-      unifiedRequest.images = request.image;
-    } else if (request.image) {
-      unifiedRequest.images = [request.image];
-    }
-    if (request.image_tail && !unifiedRequest.images) {
-      unifiedRequest.images = [request.image, request.image_tail];
-    } else if (request.image_tail && unifiedRequest.images) {
-      (unifiedRequest.images as string[]).push(request.image_tail);
-    }
-    
-    return unifiedRequest;
+    return payload;
   }
 
   private buildOpenAIRequest(request: VideoGenerationRequest): Record<string, unknown> {
-    const openaiRequest: Record<string, unknown> = {
-      model: request.model,
-      prompt: request.prompt,
-    };
-    
-    if (request.seconds !== undefined) {
-      openaiRequest.seconds = String(request.seconds);
-    } else if (request.duration) {
-      openaiRequest.seconds = String(request.duration);
+    // 同 buildUnifiedRequest，直接透传 request 字段，不做额外转换
+    const payload: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(request)) {
+      if (value !== undefined && value !== null && value !== '') {
+        payload[key] = value;
+      }
     }
-    
-    if (request.size) {
-      openaiRequest.size = request.size;
-    } else if (request.aspect_ratio) {
-      openaiRequest.size = request.aspect_ratio.replace(':', 'x');
-    }
-    
-    if (this.platform.enableWatermark !== undefined) {
-      openaiRequest.watermark = String(request.watermark ?? false);
-    }
-    
-    return openaiRequest;
+    return payload;
   }
 
   private getEndpoint(endpointType: 'createVideo' | 'queryTask'): string {
@@ -105,10 +61,18 @@ class VideoApi {
     return endpointType === 'createVideo' ? endpoints.createVideo : endpoints.queryTask;
   }
 
+  private getModelApiFormat(modelId: string): 'unified' | 'openai' {
+    const model = this.platform.models.find(m => m.id === modelId);
+    if (model?.supportedApiFormats?.includes('openai')) {
+      return 'openai';
+    }
+    return this.platform.apiFormat;
+  }
+
   async generateVideo(request: VideoGenerationRequest): Promise<VideoGenerationResponse> {
     try {
       const endpoint = this.getEndpoint('createVideo');
-      const format = this.platform.apiFormat;
+      const format = this.getModelApiFormat(request.model);
       
       let payload: Record<string, unknown>;
       if (format === 'openai') {

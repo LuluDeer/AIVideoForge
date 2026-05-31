@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Video, ListTodo } from 'lucide-react';
+import { Settings, Video, ListTodo, Layers } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -10,14 +10,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   const menuItems = [
     { id: 'generate', icon: Video, label: '视频生成' },
     { id: 'tasks', icon: ListTodo, label: '任务管理' },
+    { id: 'modelConfig', icon: Layers, label: '模型配置' },
     { id: 'config', icon: Settings, label: '系统配置' },
   ];
 
   return (
     <div className="w-64 bg-gray-800 min-h-screen flex flex-col">
       <div className="p-6 border-b border-gray-700">
-        <h1 className="text-xl font-bold text-white">祝凡科技</h1>
-        <p className="text-gray-400 text-sm mt-1">veo视频批量生成工具</p>
+        <h1 className="text-xl font-bold text-white">通用视频API生成工具</h1>
+        <p className="text-gray-400 text-sm mt-1">自定义各种请求参数及请求格式</p>
       </div>
       <nav className="flex-1 p-4">
         <ul className="space-y-2">

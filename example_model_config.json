@@ -1,0 +1,192 @@
+{
+  "configs": [
+    {
+      "modelId": "runway-gen3",
+      "modelName": "Runway Gen-3",
+      "platformId": "custom",
+      "apiFormat": "custom",
+      "parameterMappings": [
+        {
+          "unifiedParam": "prompt",
+          "modelParam": "prompt_text",
+          "paramType": "string",
+          "required": true,
+          "description": "视频生成提示词"
+        },
+        {
+          "unifiedParam": "image",
+          "modelParam": "init_image",
+          "paramType": "string",
+          "required": false,
+          "description": "初始图片URL"
+        },
+        {
+          "unifiedParam": "duration",
+          "modelParam": "duration_seconds",
+          "paramType": "number",
+          "defaultValue": 5,
+          "required": false,
+          "transform": "Math.min(Math.max(value, 4), 18)",
+          "description": "视频时长（4-18秒）"
+        },
+        {
+          "unifiedParam": "aspect_ratio",
+          "modelParam": "ratio",
+          "paramType": "string",
+          "defaultValue": "16:9",
+          "required": false,
+          "enumValues": ["16:9", "9:16", "1:1"],
+          "description": "宽高比"
+        },
+        {
+          "unifiedParam": "watermark",
+          "modelParam": "add_watermark",
+          "paramType": "boolean",
+          "defaultValue": false,
+          "required": false,
+          "description": "是否添加水印"
+        }
+      ],
+      "imageType": "single",
+      "imageLimits": {
+        "min": 0,
+        "max": 1
+      },
+      "enabled": true
+    },
+    {
+      "modelId": "pika-labs",
+      "modelName": "Pika Labs",
+      "platformId": "custom",
+      "apiFormat": "custom",
+      "parameterMappings": [
+        {
+          "unifiedParam": "prompt",
+          "modelParam": "text_prompt",
+          "paramType": "string",
+          "required": true
+        },
+        {
+          "unifiedParam": "images",
+          "modelParam": "image_input_urls",
+          "paramType": "array",
+          "required": false,
+          "description": "图片URL数组"
+        },
+        {
+          "unifiedParam": "duration",
+          "modelParam": "frame_count",
+          "paramType": "number",
+          "defaultValue": 100,
+          "required": false,
+          "transform": "value * 20",
+          "description": "帧数（时长*20）"
+        },
+        {
+          "unifiedParam": "aspect_ratio",
+          "modelParam": "aspect_ratio",
+          "paramType": "string",
+          "defaultValue": "landscape",
+          "required": false,
+          "transform": "value === '16:9' ? 'landscape' : value === '9:16' ? 'portrait' : 'square'",
+          "enumValues": ["landscape", "portrait", "square"]
+        },
+        {
+          "unifiedParam": "enhance_prompt",
+          "modelParam": "enhance_prompt_flag",
+          "paramType": "boolean",
+          "defaultValue": true,
+          "required": false
+        }
+      ],
+      "imageType": "multiple",
+      "imageLimits": {
+        "min": 0,
+        "max": 4
+      },
+      "customRequestBuilder": "{ ...request, 'model_version': 'v2.0', 'quality': 'high' }",
+      "enabled": true
+    },
+    {
+      "modelId": "stable-video",
+      "modelName": "Stable Video Diffusion",
+      "platformId": "custom",
+      "apiFormat": "custom",
+      "parameterMappings": [
+        {
+          "unifiedParam": "image",
+          "modelParam": "input_image",
+          "paramType": "string",
+          "required": true,
+          "description": "输入图片URL（必需）"
+        },
+        {
+          "unifiedParam": "prompt",
+          "modelParam": "conditioning_image",
+          "paramType": "string",
+          "required": false
+        },
+        {
+          "unifiedParam": "duration",
+          "modelParam": "num_frames",
+          "paramType": "number",
+          "defaultValue": 14,
+          "required": false,
+          "transform": "value === 4 ? 14 : value === 6 ? 25 : 14",
+          "description": "帧数"
+        },
+        {
+          "unifiedParam": "resolution",
+          "modelParam": "size",
+          "paramType": "string",
+          "defaultValue": "512x512",
+          "required": false,
+          "transform": "value === '720p' ? '768x768' : value === '1080p' ? '1024x1024' : '512x512'"
+        }
+      ],
+      "imageType": "single",
+      "imageLimits": {
+        "min": 1,
+        "max": 1
+      },
+      "enabled": true
+    }
+  ],
+  "presets": [
+    {
+      "id": "runway-high-quality",
+      "name": "Runway 高质量预设",
+      "modelId": "runway-gen3",
+      "parameters": {
+        "duration": 10,
+        "aspect_ratio": "16:9",
+        "watermark": false
+      },
+      "description": "适用于高质量视频生成",
+      "isDefault": true
+    },
+    {
+      "id": "pika-social-media",
+      "name": "Pika 社交媒体预设",
+      "modelId": "pika-labs",
+      "parameters": {
+        "duration": 6,
+        "aspect_ratio": "9:16",
+        "enhance_prompt": true
+      },
+      "description": "适用于社交媒体短视频",
+      "isDefault": false
+    },
+    {
+      "id": "svd-standard",
+      "name": "SVD 标准预设",
+      "modelId": "stable-video",
+      "parameters": {
+        "duration": 4,
+        "resolution": "720p"
+      },
+      "description": "Stable Video 标准配置",
+      "isDefault": true
+    }
+  ]
+}

@@ -1,5 +1,33 @@
 export type ApiFormatType = 'unified' | 'openai';
 
+export interface PresetOption {
+  label: string;
+  value: string | number;
+}
+
+export interface ParameterConstraint {
+  unifiedParam: string;
+  modes?: GenerationMode[];
+  enabled?: boolean;
+  hidden?: boolean;
+  fixed?: any;
+  enumValues?: any[];
+  presetOptions?: PresetOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+  defaultValue?: any;
+  useModelDefaults?: boolean;
+}
+
+export interface VersionHistory {
+  version: number;
+  syncedAt: number;
+  description?: string;
+  paramsSnapshot?: string[];
+  restoredFromVersion?: number;
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -7,6 +35,12 @@ export interface ModelInfo {
   supportedModes: GenerationMode[];
   supportedApiFormats: ApiFormatType[];
   resolution?: string;
+  parameterConstraints?: ParameterConstraint[];
+  modelConfigId?: string;
+  price?: string;
+  modelConfigVersion?: number;
+  autoSyncConfig?: boolean;
+  versionHistory?: VersionHistory[];
 }
 
 export interface ApiEndpoints {
