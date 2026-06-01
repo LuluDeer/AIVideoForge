@@ -481,7 +481,8 @@ const GeneratePage: React.FC = () => {
                 const fixed = isParamFixed(param.unifiedParam);
                 const fixedVal = getFixedValue(param.unifiedParam);
                 const enumValues = getFilteredEnumValues(param);
-                const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                const rawValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                const currentValue = convertValueByType(rawValue, param.paramType);
                 const minWidth = param.uiType === 'select' ? 'min-w-[150px]' : '';
 
                 return (
@@ -545,7 +546,8 @@ const GeneratePage: React.FC = () => {
                 {presetParams.map(param => {
                   const fixed = isParamFixed(param.unifiedParam);
                   const fixedVal = getFixedValue(param.unifiedParam);
-                  const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                  const rawPresetValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
+                  const currentValue = convertValueByType(rawPresetValue, param.paramType);
                   
                   const constraintForPreset = getConstraint(param.unifiedParam);
                   const effectivePresetOptions = (constraintForPreset?.presetOptions && constraintForPreset.presetOptions.length > 0)
@@ -712,7 +714,8 @@ const GeneratePage: React.FC = () => {
                 {checkboxParams.map(param => {
                   const fixed = isParamFixed(param.unifiedParam);
                   const fixedVal = getFixedValue(param.unifiedParam);
-                  const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? false);
+                  const rawCheckValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? false);
+                  const currentValue = convertValueByType(rawCheckValue, param.paramType) as boolean;
                   
                   return (
                     <label key={param.unifiedParam} className="flex items-center gap-1.5">
