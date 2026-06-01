@@ -31,7 +31,7 @@ interface TaskProviderProps {
 
 export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [polling, setPolling] = useState(false);
+  const pollingTaskIds = React.useRef<Set<string>>(new Set());
   const { config, activePlatform } = useConfig();
 
   const loadTasks = (): Task[] => {
@@ -101,34 +101,32 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   };
 
   const pollRunningTasks = useCallback(async () => {
-    if (polling || !activePlatform?.apiKey) return;
-    
+    if (!activePlatform?.apiKey) return;
+
     const activeTasks = tasks.filter(t => t.status === 'running' || t.status === 'pending');
     if (activeTasks.length === 0) {
-      console.log('没有需要轮询的任务');
       return;
     }
 
-    setPolling(true);
     const api = new VideoApi(activePlatform);
 
-    for (const task of activeTasks) {
-      if (task.status === 'succeed' || task.status === 'failed') {
-        console.log(`任务 ${task.id} 已完成，跳过轮询`);
-        continue;
-      }
-      
+    // 每个任务独立并发查询，互不阻塞
+    const pollPromises = activeTasks.map(async (task) => {
+      // 任务级别去重：同一个任务不重复发起查询
+      if (pollingTaskIds.current.has(task.id)) return;
+      pollingTaskIds.current.add(task.id);
+
       try {
-        const result = await api.waitForTask(task.id);
+        const result = await api.queryTask(task.id);
         const videoUrl = result.video_result?.[0]?.url;
-        
+
         updateTask(task.id, {
           status: result.task_status,
           video_url: videoUrl,
           updated_at: Date.now(),
         });
 
-        if (result.task_status === 'succeed' && videoUrl && task.auto_download && !task.downloaded && config.downloadPath) {
+        if (result.task_status === 'succeed' && videoUrl && task?.auto_download && !task.downloaded && config.downloadPath) {
           if (window.electronAPI) {
             try {
               await window.electronAPI.downloadFile(videoUrl, config.downloadPath);
@@ -136,16 +134,19 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
               console.log(`视频 ${task.id} 已自动下载`);
             } catch (downloadErr) {
               console.error('自动下载失败:', downloadErr);
+              updateTask(task.id, { downloaded: false });
             }
           }
         }
       } catch (err) {
         console.error(`轮询任务 ${task.id} 失败:`, err);
+      } finally {
+        pollingTaskIds.current.delete(task.id);
       }
-    }
+    });
 
-    setPolling(false);
-  }, [tasks, polling, activePlatform, config.downloadPath]);
+    await Promise.all(pollPromises);
+  }, [tasks, activePlatform, config.downloadPath]);
 
   useEffect(() => {
     const loadedTasks = loadTasks();
@@ -164,14 +165,14 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const activeTasks = tasks.filter(t => t.status === 'running' || t.status === 'pending');
-    if (activeTasks.length > 0 && !polling) {
+    if (activeTasks.length > 0) {
       const interval = setInterval(() => {
         pollRunningTasks();
       }, 15000);
 
       return () => clearInterval(interval);
     }
-  }, [tasks, polling, pollRunningTasks]);
+  }, [tasks, pollRunningTasks]);
 
   return (
     <TaskContext.Provider value={{ tasks, addTask, updateTask, removeTask, clearTasks, loadTasks, saveTasks, pollRunningTasks }}>

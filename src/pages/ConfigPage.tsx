@@ -642,8 +642,8 @@ const ConfigPage: React.FC = () => {
                       try {
                         const importedConfig = JSON.parse(event.target?.result as string);
                         if (confirm('确定要导入配置吗？')) {
-                          updateConfig(importedConfig);
-                          alert('导入成功！请保存配置。');
+                          updateConfig({ ...importedConfig, downloadPath: '' });
+                          alert('导入成功！下载路径已清空（路径因机器不同需重新设置），请保存配置。');
                         }
                       } catch {
                         alert('配置文件格式无效');

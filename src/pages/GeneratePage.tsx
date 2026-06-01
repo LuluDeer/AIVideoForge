@@ -281,35 +281,7 @@ const GeneratePage: React.FC = () => {
             downloaded: false,
           });
 
-          if (response.task_status === 'running') {
-            const pollTask = async () => {
-              try {
-                const result = await api.waitForTask(response.task_id);
-                const videoUrl = result.video_result?.[0]?.url;
-                updateTask(task.id, {
-                  status: result.task_status,
-                  video_url: videoUrl,
-                  updated_at: Date.now(),
-                });
-
-                if (result.task_status === 'succeed' && videoUrl && config.autoDownload && config.downloadPath) {
-                  if (window.electronAPI) {
-                    try {
-                      await window.electronAPI.downloadFile(videoUrl, config.downloadPath);
-                      updateTask(task.id, { downloaded: true });
-                      console.log(`视频 ${task.id} 已自动下载到: ${config.downloadPath}`);
-                    } catch (downloadErr) {
-                      console.error('自动下载失败:', downloadErr);
-                    }
-                  }
-                }
-              } catch (err) {
-                updateTask(task.id, { status: 'failed', updated_at: Date.now() });
-                console.error('任务轮询失败:', err);
-              }
-            };
-            pollTask();
-          }
+          // 任务状态由 TaskContext 的 interval 轮询统一管理，无需在此重复轮询
         } catch (err) {
           console.error('生成失败:', err);
           setError(`生成失败: ${(err as Error).message}`);
