@@ -343,7 +343,18 @@ class ModelConfigManager {
     return allModels.filter(({ modelInfo }) => !this.configs.has(modelInfo.id));
   }
 
-  getModelConstraints(modelId: string, platforms: PlatformConfig[]): ParameterConstraint[] {
+  getModelConstraints(modelId: string, platforms: PlatformConfig[], activePlatformId?: string): ParameterConstraint[] {
+    // 优先从当前激活平台查找，避免同名模型跨平台混用约束
+    if (activePlatformId) {
+      const activePlatform = platforms.find(p => p.id === activePlatformId);
+      if (activePlatform) {
+        const model = activePlatform.models.find(m => m.id === modelId);
+        if (model && model.parameterConstraints) {
+          return model.parameterConstraints;
+        }
+      }
+    }
+    // 回退：遍历所有平台
     for (const platform of platforms) {
       const model = platform.models.find(m => m.id === modelId);
       if (model && model.parameterConstraints) {
@@ -358,8 +369,8 @@ class ModelConfigManager {
     return constraints.find(c => c.unifiedParam === paramName);
   }
 
-  applyConstraintsToRequest(request: UnifiedVideoRequest, modelId: string, platforms: PlatformConfig[], modelConfig?: ModelParameterConfig): UnifiedVideoRequest {
-    const constraints = this.getModelConstraints(modelId, platforms);
+  applyConstraintsToRequest(request: UnifiedVideoRequest, modelId: string, platforms: PlatformConfig[], modelConfig?: ModelParameterConfig, activePlatformId?: string): UnifiedVideoRequest {
+    const constraints = this.getModelConstraints(modelId, platforms, activePlatformId);
     const result = { ...request };
 
     const convertByParamType = (value: any, paramName: string): any => {
@@ -420,8 +431,8 @@ class ModelConfigManager {
     return result;
   }
 
-  validateConstraints(request: UnifiedVideoRequest, modelId: string, platforms: PlatformConfig[]): { valid: boolean; errors: string[] } {
-    const constraints = this.getModelConstraints(modelId, platforms);
+  validateConstraints(request: UnifiedVideoRequest, modelId: string, platforms: PlatformConfig[], activePlatformId?: string): { valid: boolean; errors: string[] } {
+    const constraints = this.getModelConstraints(modelId, platforms, activePlatformId);
     const errors: string[] = [];
 
     for (const constraint of constraints) {

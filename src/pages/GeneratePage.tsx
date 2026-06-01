@@ -37,7 +37,7 @@ const GeneratePage: React.FC = () => {
       
       setModelConfig(modelConfigResult);
       
-      const constraints = modelConfigManager.getModelConstraints(selectedModel, config.platforms);
+      const constraints = modelConfigManager.getModelConstraints(selectedModel, config.platforms, activePlatform?.id);
       setModelConstraints(constraints);
       
       if (modelConfigResult) {
@@ -145,11 +145,25 @@ const GeneratePage: React.FC = () => {
   };
 
   const getSelectParams = (): ParameterMapping[] => {
-    return getVisibleParams().filter(m => m.uiType === 'select' && (!m.presetOptions || m.presetOptions.length === 0));
+    return getVisibleParams().filter(m => {
+      if (m.uiType !== 'select') return false;
+      // 约束里有 presetOptions 时，走预设按钮渲染，不走下拉框
+      const constraint = getConstraint(m.unifiedParam);
+      const effectivePreset = (constraint?.presetOptions && constraint.presetOptions.length > 0)
+        ? constraint.presetOptions
+        : m.presetOptions;
+      return !effectivePreset || effectivePreset.length === 0;
+    });
   };
 
   const getPresetParams = (): ParameterMapping[] => {
-    return getVisibleParams().filter(m => m.presetOptions && m.presetOptions.length > 0);
+    return getVisibleParams().filter(m => {
+      const constraint = getConstraint(m.unifiedParam);
+      const effectivePreset = (constraint?.presetOptions && constraint.presetOptions.length > 0)
+        ? constraint.presetOptions
+        : m.presetOptions;
+      return effectivePreset && effectivePreset.length > 0;
+    });
   };
 
   const getCheckboxParams = (): ParameterMapping[] => {
@@ -249,7 +263,7 @@ const GeneratePage: React.FC = () => {
             });
           }
 
-          const constrainedRequest = modelConfigManager.applyConstraintsToRequest(request, selectedModel, config.platforms, modelConfig ?? undefined) as VideoGenerationRequest;
+          const constrainedRequest = modelConfigManager.applyConstraintsToRequest(request, selectedModel, config.platforms, modelConfig ?? undefined, activePlatform?.id) as VideoGenerationRequest;
           const response = await api.generateVideo(constrainedRequest);
           
           const task = addTask({
@@ -533,6 +547,10 @@ const GeneratePage: React.FC = () => {
                   const fixedVal = getFixedValue(param.unifiedParam);
                   const currentValue = fixed ? fixedVal : (customParams[param.unifiedParam] ?? param.defaultValue ?? '');
                   
+                  const constraintForPreset = getConstraint(param.unifiedParam);
+                  const effectivePresetOptions = (constraintForPreset?.presetOptions && constraintForPreset.presetOptions.length > 0)
+                    ? constraintForPreset.presetOptions
+                    : param.presetOptions;
                   return (
                     <div key={param.unifiedParam}>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
@@ -540,7 +558,7 @@ const GeneratePage: React.FC = () => {
                         {fixed && <Lock className="w-3 h-3 text-gray-400" />}
                       </label>
                       <div className="flex flex-wrap gap-1.5">
-                        {param.presetOptions?.map((option, index) => (
+                        {effectivePresetOptions?.map((option, index) => (
                           <button
                             key={index}
                             onClick={() => !fixed && handleCustomParamChange(param.unifiedParam, option.value)}

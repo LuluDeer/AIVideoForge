@@ -231,24 +231,17 @@ const ConfigPage: React.FC = () => {
       return { newParams: [], deletedParams: [], hasUpdate: false };
     }
 
-    const config = modelConfigManager.getConfig(model.modelConfigId);
-    if (!config) {
+    const paramConfig = modelConfigManager.getConfig(model.modelConfigId);
+    if (!paramConfig) {
       return { newParams: [], deletedParams: [], hasUpdate: false };
     }
 
-    const currentVersion = config.version || 1;
-    const modelVersion = model.modelConfigVersion || 0;
-
-    if (currentVersion <= modelVersion) {
-      return { newParams: [], deletedParams: [], hasUpdate: false };
-    }
-
+    // 直接对比参数列表差异，不依赖版本号
     const existingConstraints = model.parameterConstraints || [];
     const existingParams = existingConstraints.map(c => c.unifiedParam);
-    const currentParams = config.parameterMappings.map(m => m.unifiedParam);
+    const currentParams = paramConfig.parameterMappings.map(m => m.unifiedParam);
 
     const newParams = currentParams.filter(p => !existingParams.includes(p));
-
     const deletedParams = existingParams.filter(p => !currentParams.includes(p));
 
     return {
@@ -637,6 +630,7 @@ const ConfigPage: React.FC = () => {
             </button>
             <button
               onClick={() => {
+                if (!confirm('导入前请确认：\n\n如果同时需要导入「模型配置」，请先在「模型配置」页完成导入，再导入此系统配置，否则可能产生多余的临时配置。\n\n确认继续导入系统配置？')) return;
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.accept = '.json';

@@ -1,7 +1,7 @@
 {
   "name": "video_gen",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.3",
   "main": "electron/main.ts",
   "type": "module",
   "description": "视频批量生成工具",
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.geekai.video-gen",
-    "productName": "veo批量视频生成",
+    "productName": "视频批量生成工具",
     "directories": {
       "output": "release"
     },
