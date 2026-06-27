@@ -1,20 +1,79 @@
 import type { ImageUploadResponse } from '../types';
+import { parseJson } from '../utils/storage';
+
+/**
+ * 平台级图片上传配置。所有字段均可选；不填则沿用 geekai 默认值。
+ * 在 PlatformDef.imageUploadConfig 里按需覆盖即可。
+ */
+export interface ImageUploaderConfig {
+  /** 获取 COS 上传凭证的接口路径，默认 /api/cos/credential */
+  credentialEndpoint?: string;
+  /** MD5 秒传检查接口路径前缀，默认 /api/block（会拼 /:md5） */
+  cacheCheckEndpoint?: string;
+  /** 上传记录回调接口路径，默认 /api/block */
+  recordEndpoint?: string;
+  /** COS bucket 上传域名，默认 geekai-1317767639.cos.ap-shanghai.myqcloud.com */
+  cosBucket?: string;
+  /** 上传成功后的公开访问域名前缀（不含尾部斜杠），默认 https://static.geekai.co */
+  storageUrlPrefix?: string;
+  /** Origin / Referer 请求头的站点域名，默认 https://geekai.co */
+  siteOrigin?: string;
+}
+
+const DEFAULT_CONFIG: Required<ImageUploaderConfig> = {
+  credentialEndpoint: '/api/cos/credential',
+  cacheCheckEndpoint: '/api/block',
+  recordEndpoint: '/api/block',
+  cosBucket: 'geekai-1317767639.cos.ap-shanghai.myqcloud.com',
+  storageUrlPrefix: 'https://static.geekai.co',
+  siteOrigin: 'https://geekai.co',
+};
+
+const MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024;
+const MAX_AUDIO_SIZE_BYTES = 50 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+const ALLOWED_AUDIO_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg']);
+
+type ImageUploadData = ImageUploadResponse['data'];
+type CosCredential = { secret_id: string; secret_key: string; token: string };
+type UploadKind = 'image' | 'video' | 'audio';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isImageUploadData = (value: unknown): value is ImageUploadData =>
+  isRecord(value) &&
+  typeof value.uuid === 'string' &&
+  typeof value.name === 'string' &&
+  typeof value.size === 'number' &&
+  typeof value.url === 'string' &&
+  typeof value.md5 === 'string' &&
+  typeof value.channel === 'string';
+
+const isImageUploadResponse = (value: unknown): value is ImageUploadResponse =>
+  isRecord(value) && isImageUploadData(value.data);
+
+const isCosCredential = (value: unknown): value is CosCredential =>
+  isRecord(value) &&
+  typeof value.secret_id === 'string' &&
+  typeof value.secret_key === 'string' &&
+  typeof value.token === 'string';
 
 class ImageUploader {
-  private baseUrl = 'https://geekai.co';
+  private baseUrl: string;
   private ck: string;
+  private cfg: Required<ImageUploaderConfig>;
 
-  constructor(ck: string = '') {
+  constructor(ck: string = '', overrides: ImageUploaderConfig = {}, baseUrl = 'https://geekai.co') {
     this.ck = ck;
+    this.baseUrl = baseUrl;
+    this.cfg = { ...DEFAULT_CONFIG, ...overrides };
   }
 
   private async computeFileMd5(buffer: ArrayBuffer): Promise<string> {
-    try {
-      const hash = await crypto.subtle.digest({ name: 'MD5' }, buffer);
-      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch {
-      return this.md5Fallback(buffer);
-    }
+    return this.md5Fallback(buffer);
   }
 
   private async sha1(str: string): Promise<string> {
@@ -162,8 +221,8 @@ class ImageUploader {
         xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36');
         xhr.setRequestHeader('Accept', 'application/json, text/plain, */*');
         xhr.setRequestHeader('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
-        xhr.setRequestHeader('Origin', 'https://geekai.co');
-        xhr.setRequestHeader('Referer', 'https://geekai.co/chat');
+        xhr.setRequestHeader('Origin', this.cfg.siteOrigin);
+        xhr.setRequestHeader('Referer', `${this.cfg.siteOrigin}/chat`);
         
         if (options.body) {
           xhr.setRequestHeader('Content-Type', 'application/json');
@@ -181,17 +240,17 @@ class ImageUploader {
           reject(new Error('Network error'));
         };
         
-        xhr.send(options.body ? JSON.stringify(options.body) : null);
+        xhr.send(typeof options.body === 'string' ? options.body : null);
       });
     }
   }
 
   async checkBlockCache(md5: string): Promise<ImageUploadResponse['data'] | null> {
     try {
-      const response = await this.makeRequest(`${this.baseUrl}/api/block/${md5}`, { method: 'GET' });
+      const response = await this.makeRequest(`${this.baseUrl}${this.cfg.cacheCheckEndpoint}/${md5}`, { method: 'GET' });
       if (response.status === 200) {
-        const data = JSON.parse(response.body);
-        return data.data || null;
+        const data = parseJson<ImageUploadResponse | null>(response.body, null, isImageUploadResponse);
+        return data?.data ?? null;
       }
       return null;
     } catch {
@@ -199,12 +258,14 @@ class ImageUploader {
     }
   }
 
-  async getCosCredential(): Promise<{ secret_id: string; secret_key: string; token: string }> {
-    const response = await this.makeRequest(`${this.baseUrl}/api/cos/credential`, { method: 'GET' });
+  async getCosCredential(): Promise<CosCredential> {
+    const response = await this.makeRequest(`${this.baseUrl}${this.cfg.credentialEndpoint}`, { method: 'GET' });
     if (response.status !== 200) {
       throw new Error(`获取凭证失败: ${response.status}`);
     }
-    return JSON.parse(response.body);
+    const credential = parseJson<CosCredential | null>(response.body, null, isCosCredential);
+    if (!credential) throw new Error('获取凭证失败: 响应格式错误');
+    return credential;
   }
 
   private async generateCosSignature(credential: { secret_id: string; secret_key: string }, method: string, pathname: string, headers: Record<string, string>): Promise<string> {
@@ -234,37 +295,46 @@ class ImageUploader {
     const string_to_sign = `sha1\n${q_sign_time}\n${http_string_hash}\n`;
     const signature = await this.hmacSha1(sign_key, string_to_sign);
 
-    console.log('[DEBUG] COS Signature Params:');
-    console.log('  q_sign_time:', q_sign_time);
-    console.log('  q_key_time:', q_key_time);
-    console.log('  q_header_list:', q_header_list);
-    console.log('  q_header_str:', q_header_str);
-    console.log('  http_string:', http_string);
-    console.log('  sign_key:', sign_key);
-    console.log('  http_string_hash:', http_string_hash);
-    console.log('  string_to_sign:', string_to_sign);
-    console.log('  signature:', signature);
-
     return `q-sign-algorithm=sha1&q-ak=${secret_id}&q-sign-time=${q_sign_time}&q-key-time=${q_key_time}&q-header-list=${q_header_list}&q-url-param-list=&q-signature=${signature}`;
   }
 
-  private getFileExtension(fileName: string): string {
+  private getFileExtension(fileName: string, fallback = 'bin'): string {
     const lastDotIndex = fileName.lastIndexOf('.');
-    return lastDotIndex === -1 ? 'png' : fileName.substring(lastDotIndex + 1).toLowerCase();
+    return lastDotIndex === -1 ? fallback : fileName.substring(lastDotIndex + 1).toLowerCase();
   }
 
-  private async uploadToCos(buffer: ArrayBuffer, credential: { secret_id: string; secret_key: string; token: string }, fileName: string): Promise<string> {
-    const fileExt = this.getFileExtension(fileName);
+  private getImageMime(file: File): string {
+    if (file.type) return file.type;
+    const fileExt = this.getFileExtension(file.name, 'png');
+    return fileExt === 'jpg' ? 'image/jpeg' : `image/${fileExt}`;
+  }
+
+  private getAttachmentMime(file: File): string {
+    return file.type || 'application/octet-stream';
+  }
+
+  private getCosFolder(kind: UploadKind): 'image' | 'file' {
+    return kind === 'image' ? 'image' : 'file';
+  }
+
+  private async uploadToCos(
+    buffer: ArrayBuffer,
+    credential: { secret_id: string; secret_key: string; token: string },
+    fileName: string,
+    mime: string,
+    kind: UploadKind,
+  ): Promise<string> {
+    const fileExt = this.getFileExtension(fileName, kind === 'image' ? 'png' : 'bin');
     const now = new Date();
     const uuid = crypto.randomUUID().replace(/-/g, '');
-    const cosKey = `image/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${uuid}.${fileExt}`;
-    const cosUrl = `https://geekai-1317767639.cos.ap-shanghai.myqcloud.com/${cosKey}`;
+    const cosKey = `${this.getCosFolder(kind)}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${uuid}.${fileExt}`;
+    const cosUrl = `https://${this.cfg.cosBucket}/${cosKey}`;
     const pathname = `/${cosKey}`;
 
     const cosHeaders: Record<string, string> = {
-      'Content-Type': `image/${fileExt}`,
+      'Content-Type': mime,
       'Content-Length': String(buffer.byteLength),
-      'Host': 'geekai-1317767639.cos.ap-shanghai.myqcloud.com',
+      'Host': this.cfg.cosBucket,
       'x-cos-security-token': credential.token,
     };
 
@@ -278,7 +348,7 @@ class ImageUploader {
         url: cosUrl,
         headers: cosHeaders,
       });
-      return `https://static.geekai.co/${cosKey}`;
+      return `${this.cfg.storageUrlPrefix}/${cosKey}`;
     } else {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -291,8 +361,8 @@ class ImageUploader {
         }
         
         xhr.onload = () => {
-          if (xhr.status === 200) {
-            resolve(`https://static.geekai.co/${cosKey}`);
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve(`${this.cfg.storageUrlPrefix}/${cosKey}`);
           } else {
             reject(new Error(`COS上传失败: ${xhr.status}`));
           }
@@ -307,11 +377,10 @@ class ImageUploader {
     }
   }
 
-  private async createBlockRecord(fileName: string, fileUrl: string, md5: string, fileSize: number): Promise<ImageUploadResponse['data']> {
-    const fileExt = this.getFileExtension(fileName);
-    const payload = { md5, name: fileName, type: `image/${fileExt}`, size: fileSize, url: fileUrl, channel: 'dati' };
+  private async createBlockRecord(fileName: string, fileUrl: string, md5: string, fileSize: number, mime: string, channel: 'dati' | 'chat'): Promise<ImageUploadResponse['data']> {
+    const payload = { md5, name: fileName, type: mime, size: fileSize, url: fileUrl, channel };
 
-    const response = await this.makeRequest(`${this.baseUrl}/api/block`, {
+    const response = await this.makeRequest(`${this.baseUrl}${this.cfg.recordEndpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -321,11 +390,16 @@ class ImageUploader {
       throw new Error(`创建block记录失败: ${response.status}`);
     }
     
-    const data = JSON.parse(response.body);
+    const data = parseJson<ImageUploadResponse | null>(response.body, null, isImageUploadResponse);
+    if (!data) throw new Error('创建block记录失败: 响应格式错误');
     return data.data;
   }
 
   async uploadImage(file: File): Promise<ImageUploadResponse['data']> {
+    if (!file || !(file instanceof File)) throw new Error('请选择有效的图片文件');
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new Error('仅支持 JPG、PNG、WebP 或 GIF 图片');
+    if (file.size <= 0) throw new Error('图片文件为空');
+    if (file.size > MAX_IMAGE_SIZE_BYTES) throw new Error('图片过大，请选择 15MB 以内的图片');
     const buffer = await file.arrayBuffer();
     const md5 = await this.computeFileMd5(buffer);
 
@@ -334,9 +408,37 @@ class ImageUploader {
       return cachedBlock;
     }
 
+    const mime = this.getImageMime(file);
     const credential = await this.getCosCredential();
-    const fileUrl = await this.uploadToCos(buffer, credential, file.name);
-    const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength);
+    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, 'image');
+    const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'dati');
+
+    return blockData;
+  }
+
+  async uploadFile(file: File, kind: 'video' | 'audio'): Promise<ImageUploadResponse['data']> {
+    if (!file || !(file instanceof File)) throw new Error(`请选择有效的${kind === 'video' ? '视频' : '音频'}文件`);
+    if (file.size <= 0) throw new Error(`${kind === 'video' ? '视频' : '音频'}文件为空`);
+    if (kind === 'video') {
+      if (!ALLOWED_VIDEO_TYPES.has(file.type)) throw new Error('仅支持 MP4、WebM 或 MOV 视频');
+      if (file.size > MAX_VIDEO_SIZE_BYTES) throw new Error('视频过大，请选择 200MB 以内的视频');
+    } else {
+      if (!ALLOWED_AUDIO_TYPES.has(file.type)) throw new Error('仅支持 MP3、WAV、M4A、AAC 或 OGG 音频');
+      if (file.size > MAX_AUDIO_SIZE_BYTES) throw new Error('音频过大，请选择 50MB 以内的音频');
+    }
+
+    const buffer = await file.arrayBuffer();
+    const md5 = await this.computeFileMd5(buffer);
+
+    const cachedBlock = await this.checkBlockCache(md5);
+    if (cachedBlock) {
+      return cachedBlock;
+    }
+
+    const mime = this.getAttachmentMime(file);
+    const credential = await this.getCosCredential();
+    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, kind);
+    const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'chat');
 
     return blockData;
   }

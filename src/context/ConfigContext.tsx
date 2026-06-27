@@ -1,176 +1,268 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { Config, PlatformConfig } from '../types';
-import { defaultPlatforms } from '../types';
+import type { AppConfig, RuntimePlatform, UserPlatformConfig, UserParamOverride, CustomPlatformDef } from '../types';
+import { PLATFORM_DEFS, buildDefaultParams } from '../services/modelTemplates';
+import { readJsonStorage, writeJsonStorage } from '../utils/storage';
+import { logger } from '../utils/logger';
+import { DEFAULT_APP_CONFIG, migrateLegacyConfig, normalizeAppConfig } from '../services/configSchema';
+import { ConfigContext } from './configContextValue';
+import type { ConfigContextType } from './configContextValue';
 
-const defaultConfig: Config = {
-  downloadPath: '',
-  autoDownload: false,
-  platforms: defaultPlatforms,
-  activePlatformId: 'geekai',
-  uploadCk: '',
-};
+const STORAGE_KEY = 'video_gen_app_config';
 
-interface ConfigContextType {
-  config: Config;
-  setConfig: (config: Config) => void;
-  updateConfig: (updates: Partial<Config>) => void;
-  saveConfig: () => void;
-  loadConfig: () => void;
-  saveSuccess: boolean;
-  activePlatform: PlatformConfig;
-  updatePlatform: (platformId: string, updates: Partial<PlatformConfig>) => void;
-  addPlatform: (platform: PlatformConfig) => void;
-  removePlatform: (platformId: string) => void;
-  setActivePlatform: (platformId: string) => void;
-}
-
-const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
-
-export const useConfig = (): ConfigContextType => {
-  const context = useContext(ConfigContext);
-  if (!context) {
-    throw new Error('useConfig must be used within a ConfigProvider');
+function mergeToRuntime(platformId: string, userConfig?: UserPlatformConfig): RuntimePlatform {
+  const def = PLATFORM_DEFS.find(p => p.id === platformId);
+  if (!def) {
+    return {
+      id: platformId,
+      name: platformId,
+      baseUrl: userConfig?.baseUrl ?? '',
+      apiKey: userConfig?.apiKey ?? '',
+      endpoints: { createVideo: '', queryTask: '' },
+      defaultModel: '',
+      models: [],
+      paramOverrides: userConfig?.paramOverrides ?? {},
+    };
   }
-  return context;
-};
-
-interface ConfigProviderProps {
-  children: ReactNode;
+  return {
+    id: def.id,
+    name: def.name,
+    baseUrl: userConfig?.baseUrl ?? def.defaultBaseUrl,
+    apiKey: userConfig?.apiKey ?? '',
+    endpoints: {
+      createVideo: userConfig?.endpoints?.createVideo ?? def.defaultEndpoints.createVideo,
+      queryTask: userConfig?.endpoints?.queryTask ?? def.defaultEndpoints.queryTask,
+      queryTaskList: userConfig?.endpoints?.queryTaskList ?? def.defaultEndpoints.queryTaskList,
+      deleteTask: userConfig?.endpoints?.deleteTask ?? def.defaultEndpoints.deleteTask,
+    },
+    defaultModel: def.defaultModel,
+    models: def.models,
+    paramOverrides: userConfig?.paramOverrides ?? {},
+    imageUploadMode: userConfig?.imageUploadMode ?? 'geekai',
+    imageUploadConfig: (userConfig?.imageUploadConfig || def.imageUploadConfig)
+      ? { ...def.imageUploadConfig, ...userConfig?.imageUploadConfig }
+      : undefined,
+  };
 }
 
-export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
-  const [config, setConfig] = useState<Config>(defaultConfig);
+export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    loadConfig();
+    const saved = readJsonStorage<unknown | null>(STORAGE_KEY, null);
+    const legacy = readJsonStorage<unknown | null>('geekai_config', null);
+    if (saved) {
+      setAppConfig(normalizeAppConfig(saved, { current: DEFAULT_APP_CONFIG }));
+    } else if (legacy) {
+      setAppConfig(migrateLegacyConfig(legacy));
+    }
+    setInitialized(true);
   }, []);
 
-  const loadConfig = () => {
-    try {
-      const saved = localStorage.getItem('geekai_config');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setConfig({ 
-          ...defaultConfig, 
-          ...parsed,
-          platforms: parsed.platforms?.map((p: PlatformConfig) => ({
-            ...p,
-            endpoints: p.endpoints || {
-              createVideo: '/v1/videos/generations',
-              queryTask: '/v1/videos/{id}',
-            },
-            models: p.models?.map((m) => ({
-              ...m,
-              supportedApiFormats: m.supportedApiFormats || ['unified'],
-            })) || [],
-          })) || defaultPlatforms,
-        });
-      }
-    } catch (error) {
-      console.error('加载配置失败:', error);
+  useEffect(() => {
+    if (!initialized) return;
+    const normalized = normalizeAppConfig(appConfig, { current: DEFAULT_APP_CONFIG });
+    const ok = writeJsonStorage(STORAGE_KEY, normalized, error => {
+      logger.warn('ConfigContext', '自动保存配置失败', error);
+    });
+    if (!ok) return;
+    setSaveSuccess(true);
+    const t = setTimeout(() => setSaveSuccess(false), 2000);
+    return () => clearTimeout(t);
+  }, [appConfig, initialized]);
+
+  const updateAppConfig = useCallback((updates: Partial<AppConfig>) => {
+    setAppConfig(prev => normalizeAppConfig({ ...prev, ...updates }, { current: prev }));
+    setSaveSuccess(false);
+  }, []);
+
+  const getUserPlatformConfig = useCallback((platformId: string): UserPlatformConfig => {
+    const direct = appConfig.platforms.find(p => p.platformId === platformId);
+    if (direct) return direct;
+    if (platformId === 'seedance') {
+      const legacyOfficial = appConfig.platforms.find(p => p.platformId === 'doubao-official');
+      if (legacyOfficial) return { ...legacyOfficial, platformId: 'seedance' };
     }
-  };
+    return { platformId, apiKey: '' };
+  }, [appConfig.platforms]);
 
-  const updateConfig = (updates: Partial<Config>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+  const updateUserPlatformConfig = useCallback((platformId: string, updates: Partial<UserPlatformConfig>) => {
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      const updated: UserPlatformConfig = existing ? { ...existing, ...updates } : { platformId, apiKey: '', ...updates };
+      const platforms = existing ? prev.platforms.map(p => p.platformId === platformId ? updated : p) : [...prev.platforms, updated];
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
     setSaveSuccess(false);
-  };
+  }, []);
 
-  const updatePlatform = (platformId: string, updates: Partial<PlatformConfig>) => {
-    setConfig(prev => ({
+  const updateParamOverride = useCallback((platformId: string, paramKey: string, override: Partial<UserParamOverride>, modelId?: string) => {
+    const storageKey = modelId ? `${modelId}__${paramKey}` : paramKey;
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      const currentOverrides = existing?.paramOverrides ?? {};
+      const updatedOverride = { ...(currentOverrides[storageKey] ?? {}), ...override };
+      const isEffectivelyEmpty = Object.values(updatedOverride).every(v => v === undefined || v === false);
+      const newOverrides = isEffectivelyEmpty
+        ? (() => { const o = { ...currentOverrides }; delete o[storageKey]; return o; })()
+        : { ...currentOverrides, [storageKey]: updatedOverride };
+      const platforms = existing
+        ? prev.platforms.map(p => p.platformId === platformId ? { ...p, paramOverrides: newOverrides } : p)
+        : [...prev.platforms, { platformId, apiKey: '', paramOverrides: newOverrides }];
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
+    setSaveSuccess(false);
+  }, []);
+
+  const resetParamOverride = useCallback((platformId: string, paramKey: string, modelId?: string) => {
+    const storageKey = modelId ? `${modelId}__${paramKey}` : paramKey;
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      if (!existing?.paramOverrides) return prev;
+      const newOverrides = { ...existing.paramOverrides };
+      delete newOverrides[storageKey];
+      const platforms = prev.platforms.map(p => p.platformId === platformId ? { ...p, paramOverrides: newOverrides } : p);
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
+    setSaveSuccess(false);
+  }, []);
+
+  const getParamOverride = useCallback((platformId: string, paramKey: string, modelId?: string): UserParamOverride | undefined => {
+    const userConfig = appConfig.platforms.find(p => p.platformId === platformId);
+    if (!userConfig?.paramOverrides) return undefined;
+    const overrides = userConfig.paramOverrides;
+    if (modelId) {
+      const modelKey = `${modelId}__${paramKey}`;
+      if (overrides[modelKey]) return overrides[modelKey];
+    }
+    return overrides[paramKey];
+  }, [appConfig.platforms]);
+
+  const addCustomPlatform = useCallback((def: CustomPlatformDef) => {
+    setAppConfig(prev => normalizeAppConfig({ ...prev, customPlatforms: [...(prev.customPlatforms ?? []), def] }, { current: prev }));
+    setSaveSuccess(false);
+  }, []);
+
+  const updateCustomPlatform = useCallback((id: string, updates: Partial<CustomPlatformDef>) => {
+    setAppConfig(prev => normalizeAppConfig({
       ...prev,
-      platforms: prev.platforms.map(p => 
-        p.id === platformId ? { ...p, ...updates } : p
-      ),
-    }));
+      customPlatforms: (prev.customPlatforms ?? []).map(cp => cp.id === id ? { ...cp, ...updates } : cp),
+    }, { current: prev }));
     setSaveSuccess(false);
-  };
+  }, []);
 
-  const addPlatform = (platform: PlatformConfig) => {
-    const newPlatform: PlatformConfig = {
-      ...platform,
-      endpoints: platform.endpoints || {
-        createVideo: '/v1/videos/generations',
-        queryTask: '/v1/videos/{id}',
-      },
-    };
-    setConfig(prev => ({
+  const removeCustomPlatform = useCallback((id: string) => {
+    setAppConfig(prev => normalizeAppConfig({
       ...prev,
-      platforms: [...prev.platforms, newPlatform],
-    }));
+      customPlatforms: (prev.customPlatforms ?? []).filter(cp => cp.id !== id),
+      activePlatformId: prev.activePlatformId === id ? (PLATFORM_DEFS[0]?.id ?? prev.activePlatformId) : prev.activePlatformId,
+    }, { current: prev }));
     setSaveSuccess(false);
-  };
+  }, []);
 
-  const removePlatform = (platformId: string) => {
-    setConfig(prev => ({
-      ...prev,
-      platforms: prev.platforms.filter(p => p.id !== platformId),
-      activePlatformId: prev.activePlatformId === platformId 
-        ? prev.platforms.find(p => p.id !== platformId)?.id || prev.platforms[0]?.id || '' 
-        : prev.activePlatformId,
-    }));
-    setSaveSuccess(false);
-  };
-
-  const setActivePlatform = (platformId: string) => {
-    setConfig(prev => ({ ...prev, activePlatformId: platformId }));
-    setSaveSuccess(false);
-  };
-
-  const saveConfig = async () => {
-    try {
-      localStorage.setItem('geekai_config', JSON.stringify(config));
-      
-      if (config.uploadCk) {
-        if (window.electronAPI) {
-          const result = await window.electronAPI.setCookies(config.uploadCk);
-          console.log('Cookies set via Electron API:', result);
-        } else {
-          const cookieParts = config.uploadCk.split(';');
-          cookieParts.forEach((part: string) => {
-            const trimmed = part.trim();
-            if (trimmed) {
-              const [name, ...valueParts] = trimmed.split('=');
-              const value = valueParts.join('=');
-              if (name && value) {
-                document.cookie = `${name}=${value}; domain=.geekai.co; path=/; secure`;
-              }
-            }
-          });
-          console.log('Cookies set via document.cookie');
-        }
+  const runtimePlatforms = useMemo(() => {
+    const codePlatforms = PLATFORM_DEFS.flatMap(def => {
+      const userConfig = appConfig.platforms.find(p => p.platformId === def.id);
+      if (userConfig?.disabled) return [];
+      const runtime = mergeToRuntime(def.id, userConfig);
+      if (userConfig?.extraModels && userConfig.extraModels.length > 0) {
+        const extraAsModelDef = userConfig.extraModels.map(m => ({
+          id: m.id,
+          platformId: def.id,
+          name: m.name,
+          label: m.label,
+          modes: m.modes,
+          apiFormat: m.apiFormat ?? def.models[0]?.apiFormat ?? 'unified',
+          params: m.params ?? buildDefaultParams(m.modes),
+        }));
+        const disabledModelIds = new Set(userConfig.extraModels.filter(model => model.disabled).map(model => model.id));
+        const extraById = new Map(extraAsModelDef.map(model => [model.id, model]));
+        const mergedModels = runtime.models
+          .map(model => extraById.get(model.id) ?? model)
+          .filter(model => !disabledModelIds.has(model.id));
+        const builtinIds = new Set(runtime.models.map(model => model.id));
+        runtime.models = [
+          ...mergedModels,
+          ...extraAsModelDef.filter(model => !builtinIds.has(model.id) && !disabledModelIds.has(model.id)),
+        ];
       }
-      
+      if (userConfig?.defaultModel) runtime.defaultModel = userConfig.defaultModel;
+      if (!runtime.models.some(model => model.id === runtime.defaultModel)) {
+        runtime.defaultModel = runtime.models[0]?.id ?? '';
+      }
+      return [runtime];
+    });
+    const customRuntimes: RuntimePlatform[] = (appConfig.customPlatforms ?? [])
+      .filter(cp => !cp.disabled)
+      .map(cp => {
+        const models = (cp.models ?? [])
+          .filter(m => !m.disabled)
+          .map(m => ({
+            id: m.id,
+            platformId: cp.id,
+            name: m.name,
+            label: m.label,
+            modes: m.modes,
+            apiFormat: m.apiFormat ?? cp.apiFormat,
+            params: m.params ?? buildDefaultParams(m.modes),
+          }));
+        return {
+          id: cp.id,
+          name: cp.name,
+          baseUrl: cp.baseUrl,
+          apiKey: cp.apiKey,
+          endpoints: cp.endpoints,
+          defaultModel: models.some(model => model.id === cp.defaultModel) ? (cp.defaultModel ?? '') : (models[0]?.id ?? ''),
+          models,
+          paramOverrides: {},
+          imageUploadMode: cp.imageUploadMode ?? 'url',
+          apiFormat: cp.apiFormat,
+        };
+      });
+    return [...codePlatforms, ...customRuntimes];
+  }, [appConfig.platforms, appConfig.customPlatforms]);
+
+  const activePlatform = useMemo(() => runtimePlatforms.find(p => p.id === appConfig.activePlatformId) ?? runtimePlatforms[0], [runtimePlatforms, appConfig.activePlatformId]);
+
+  const setActivePlatformId = useCallback((id: string) => {
+    updateAppConfig({ activePlatformId: id });
+  }, [updateAppConfig]);
+
+  const saveConfig = useCallback(async (): Promise<void> => {
+    try {
+      const normalized = normalizeAppConfig(appConfig, { current: DEFAULT_APP_CONFIG });
+      let storageError: unknown;
+      const ok = writeJsonStorage(STORAGE_KEY, normalized, error => { storageError = error; });
+      if (!ok) throw storageError ?? new Error('localStorage 不可用');
+      if (normalized.uploadCk && window.electronAPI) await window.electronAPI.setCookies(normalized.uploadCk);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
-      console.error('保存配置失败:', error);
+      logger.error('ConfigContext', '保存配置失败', error);
+      setSaveSuccess(false);
+      throw error;
     }
-  };
+  }, [appConfig]);
 
-  const activePlatform = useMemo(() => {
-    return config.platforms.find(p => p.id === config.activePlatformId) || config.platforms[0];
-  }, [config.platforms, config.activePlatformId]);
+  const contextValue = useMemo<ConfigContextType>(() => ({
+    appConfig,
+    updateAppConfig,
+    saveConfig,
+    saveSuccess,
+    activePlatform,
+    setActivePlatformId,
+    runtimePlatforms,
+    getUserPlatformConfig,
+    updateUserPlatformConfig,
+    updateParamOverride,
+    resetParamOverride,
+    getParamOverride,
+    addCustomPlatform,
+    updateCustomPlatform,
+    removeCustomPlatform,
+  }), [appConfig, updateAppConfig, saveConfig, saveSuccess, activePlatform, setActivePlatformId, runtimePlatforms, getUserPlatformConfig, updateUserPlatformConfig, updateParamOverride, resetParamOverride, getParamOverride, addCustomPlatform, updateCustomPlatform, removeCustomPlatform]);
 
-  return (
-    <ConfigContext.Provider 
-      value={{ 
-        config, 
-        setConfig, 
-        updateConfig, 
-        saveConfig, 
-        loadConfig, 
-        saveSuccess,
-        activePlatform,
-        updatePlatform,
-        addPlatform,
-        removePlatform,
-        setActivePlatform,
-      }}
-    >
-      {children}
-    </ConfigContext.Provider>
-  );
+  return <ConfigContext.Provider value={contextValue}>{children}</ConfigContext.Provider>;
 };

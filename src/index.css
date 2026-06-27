@@ -2,18 +2,291 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #172033;
+  background: #eef3fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --bg: #eef3fb;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-solid: #ffffff;
+  --surface-soft: #f7f9fd;
+  --surface-muted: #edf2fa;
+  --border: rgba(119, 136, 170, 0.22);
+  --border-strong: rgba(87, 107, 143, 0.35);
+  --text: #172033;
+  --text-muted: #667085;
+  --text-soft: #8792a8;
+  --primary: #5865f2;
+  --primary-strong: #4353d8;
+  --primary-soft: rgba(88, 101, 242, 0.12);
+  --primary-softer: rgba(88, 101, 242, 0.07);
+  --success: #12a66a;
+  --success-soft: rgba(18, 166, 106, 0.12);
+  --warning: #d98612;
+  --warning-soft: rgba(217, 134, 18, 0.14);
+  --danger: #db3b55;
+  --danger-soft: rgba(219, 59, 85, 0.12);
+  --info: #1277d9;
+  --info-soft: rgba(18, 119, 217, 0.12);
+  --shadow-sm: 0 8px 24px rgba(22, 34, 63, 0.07);
+  --shadow-md: 0 18px 48px rgba(22, 34, 63, 0.11);
+  --shadow-lg: 0 28px 76px rgba(22, 34, 63, 0.16);
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --focus: 0 0 0 4px rgba(88, 101, 242, 0.16);
+}
+
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--bg);
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #f5f7fa;
+  margin: 0;
+  min-width: 320px;
   min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 8% -8%, rgba(88, 101, 242, 0.24), transparent 34rem),
+    radial-gradient(circle at 92% 4%, rgba(31, 187, 168, 0.18), transparent 30rem),
+    linear-gradient(180deg, #f7f9ff 0%, #eef3fb 42%, #e9eef8 100%);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(88, 101, 242, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(88, 101, 242, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,0.72), transparent 72%);
 }
 
 #root {
   min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+select,
+.app-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(135deg, rgba(88, 101, 242, 0.04), rgba(18, 119, 217, 0.02)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%235865f2' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, right 0.75rem center;
+  background-size: auto, 1rem 1rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(22,34,63,0.04);
+}
+
+select:hover,
+.app-select:hover {
+  border-color: rgba(88, 101, 242, 0.38) !important;
+  background-color: #f8faff !important;
+}
+
+select:focus,
+.app-select:focus {
+  border-color: rgb(88 101 242) !important;
+}
+
+select option {
+  color: #172033;
+  background: #ffffff;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: rgb(37 99 235);
+}
+
+
+button {
+  border: 0;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+
+button:not(:disabled),
+select:not(:disabled),
+input[type='file']:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--primary);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 101, 242, 0.42) rgba(226, 232, 240, 0.42);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.42);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 2px solid rgba(247, 249, 255, 0.82);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(88, 101, 242, 0.68), rgba(25, 183, 167, 0.62));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(67, 83, 216, 0.84), rgba(18, 166, 150, 0.78));
+}
+
+input[type='checkbox']:focus,
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus,
+input[type='radio']:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* UI readability fixes: long model ids, platform names and action labels should wrap instead of being clipped. */
+:where(.config-page, .generate-page, .tasks-page) :where(p, span, code, label, button, option, input, textarea, select) {
+  min-width: 0;
+}
+
+:where(.config-page, .generate-page, .tasks-page) :where(code, .break-all) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+:where(.config-page, .generate-page, .tasks-page) :where(button, input, textarea, select) {
+  line-height: 1.5;
+}
+
+:where(.config-page) :where(input, select) {
+  min-height: 44px;
+  height: auto;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+  overflow: visible;
+  line-height: 1.5;
+}
+
+:where(.config-page) :where(button, .inline-flex, code) {
+  line-height: 1.45;
+}
+
+button.prompt-library-trigger,
+button.prompt-library-trigger:hover,
+button.prompt-library-trigger:focus,
+button.prompt-library-trigger:active {
+  background-color: rgb(243 232 255) !important;
+  color: rgb(126 34 206) !important;
+  border-color: rgb(216 180 254) !important;
+}
+
+button.prompt-library-trigger[aria-expanded='true'],
+button.prompt-library-trigger[aria-expanded='true']:hover,
+button.prompt-library-trigger[aria-expanded='true']:focus,
+button.prompt-library-trigger[aria-expanded='true']:active {
+  background-color: rgb(147 51 234) !important;
+  color: #ffffff !important;
+  border-color: rgb(147 51 234) !important;
+}
+
+button.prompt-library-primary,
+button.prompt-library-primary:hover,
+button.prompt-library-primary:focus,
+button.prompt-library-primary:active {
+  background-color: rgb(147 51 234) !important;
+  color: #ffffff !important;
+  border-color: rgb(147 51 234) !important;
+}
+
+.prompt-library-panel {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 78vh;
+  overflow: hidden;
+}
+
+.prompt-library-panel * {
+  min-width: 0;
+}
+
+.prompt-library-list {
+  max-height: calc(78vh - 13rem);
+}
+
+.prompt-library-panel button,
+.prompt-library-panel p,
+.prompt-library-panel textarea,
+.prompt-library-panel input,
+.prompt-library-panel span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+:where(.config-page, .generate-page, .tasks-page) :where(.text-\[10px\]) {
+  line-height: 1.35;
 }

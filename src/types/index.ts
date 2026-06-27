@@ -1,110 +1,280 @@
-export type ApiFormatType = 'unified' | 'openai';
+// ─── 生成模式 ───────────────────────────────────────────────
+export type GenerationMode = 'text' | 'image' | 'imageTail' | 'multiImage' | 'multiModal';
 
-export interface PresetOption {
+// ─── API 格式 ────────────────────────────────────────────────
+export type ApiFormatType = 'unified' | 'openai' | 'seedance';
+
+// ─── 图片上传方式 ─────────────────────────────────────────────
+export type ImageUploadMode = 'geekai' | 'base64' | 'url';
+
+// ─── 参数选项 ────────────────────────────────────────────────
+export interface ParamOption {
   label: string;
   value: string | number;
 }
 
-export interface ParameterConstraint {
-  unifiedParam: string;
+// ─── 参数定义（代码侧，单一来源）────────────────────────────
+export type ParamDefType = 'string' | 'number' | 'boolean' | 'image' | 'image-multi' | 'video' | 'video-multi' | 'audio' | 'audio-multi' | 'array' | 'object' | (string & {});
+
+export interface ParamDef {
+  key: string;
+  apiKey?: string;
+  label: string;
+  type: ParamDefType;
   modes?: GenerationMode[];
-  enabled?: boolean;
   hidden?: boolean;
-  fixed?: any;
-  enumValues?: any[];
-  presetOptions?: PresetOption[];
-  min?: number;
-  max?: number;
-  step?: number;
-  defaultValue?: any;
-  useModelDefaults?: boolean;
+  fixedValue?: unknown;
+  defaultValue?: unknown;
+  options?: ParamOption[];
+  imageLimits?: { min?: number; max?: number };
+  required?: boolean;
 }
 
-export interface VersionHistory {
-  version: number;
-  syncedAt: number;
-  description?: string;
-  paramsSnapshot?: string[];
-  restoredFromVersion?: number;
+// ─── 用户覆盖（localStorage 侧）──────────────────────────────
+export interface UserParamOverride {
+  disabled?: boolean;
+  defaultValue?: unknown;
+  options?: ParamOption[];
 }
 
-export interface ModelInfo {
+// ─── 模型定义（代码侧）──────────────────────────────────────
+export interface ModelDef {
   id: string;
+  platformId: string;
   name: string;
   label: string;
-  supportedModes: GenerationMode[];
-  supportedApiFormats: ApiFormatType[];
-  resolution?: string;
-  parameterConstraints?: ParameterConstraint[];
-  modelConfigId?: string;
   price?: string;
-  modelConfigVersion?: number;
-  autoSyncConfig?: boolean;
-  versionHistory?: VersionHistory[];
+  modes: GenerationMode[];
+  apiFormat: ApiFormatType;
+  params: ParamDef[];
 }
 
+// ─── 平台定义（代码侧）──────────────────────────────────────
+export interface PlatformDef {
+  id: string;
+  name: string;
+  defaultBaseUrl: string;
+  defaultEndpoints: ApiEndpoints;
+  defaultModel: string;
+  models: ModelDef[];
+  /**
+   * 图片上传行为的平台级覆盖。不填则沿用 geekai 默认逻辑。
+   * 字段含义见 ImageUploaderConfig（services/imageUpload.ts）。
+   */
+  imageUploadConfig?: import('../services/imageUpload').ImageUploaderConfig;
+}
+
+// ─── API Endpoints ───────────────────────────────────────────
 export interface ApiEndpoints {
   createVideo: string;
   queryTask: string;
-  downloadVideo?: string;
+  /** 任务列表查询端点（豆包官方支持，中转站可选） */
+  queryTaskList?: string;
+  /** 取消/删除任务端点（豆包官方支持，中转站可选） */
+  deleteTask?: string;
 }
 
-export interface PlatformConfig {
+// ─── 用户平台覆盖（localStorage 侧）─────────────────────────
+export interface UserPlatformConfig {
+  platformId: string;
+  apiKey: string;
+  baseUrl?: string;
+  /** 是否停用该内置平台 */
+  disabled?: boolean;
+  endpoints?: Partial<ApiEndpoints>;
+  paramOverrides?: Record<string, UserParamOverride>;
+  /** 当前内置平台的图片上传方式 */
+  imageUploadMode?: ImageUploadMode;
+  /** 图片上传配置覆盖，用户在 ConfigPage 填写后持久化 */
+  imageUploadConfig?: import('../services/imageUpload').ImageUploaderConfig;
+  /** 用户为该内置平台新增的额外模型（不改代码，保存到 localStorage） */
+  extraModels?: CustomModelDef[];
+  /** 用户指定的默认模型覆盖 */
+  defaultModel?: string;
+}
+
+// ─── 应用配置（localStorage 侧，只存用户数据）────────────────
+export interface AppConfig {
+  /** 配置 schema 版本，用于后续无损迁移 */
+  schemaVersion?: number;
+  activePlatformId: string;
+  platforms: UserPlatformConfig[];
+  downloadPath: string;
+  autoDownload: boolean;
+  uploadCk: string;
+  /** 旧版全局图片上传模式，仅用于兼容迁移；新配置请使用平台级 imageUploadMode */
+  imageUploadMode?: ImageUploadMode;
+  /** 用户自定义平台列表 */
+  customPlatforms?: CustomPlatformDef[];
+}
+
+// ─── 用户自定义模型（轻量定义，不依赖代码侧 ModelDef）────────
+export interface CustomModelDef {
+  id: string;
+  name: string;
+  label: string;
+  modes: GenerationMode[];
+  /** 是否停用该模型 */
+  disabled?: boolean;
+  /** 自定义模型可单独指定 apiFormat，为空时继承平台的 apiFormat */
+  apiFormat?: ApiFormatType;
+  /** 自定义模型的参数定义（简化版，用户可自行添加需要的参数） */
+  params?: ParamDef[];
+}
+
+// ─── 用户自定义平台（完整定义，不依赖 PLATFORM_DEFS）─────────
+export interface CustomPlatformDef {
   id: string;
   name: string;
   baseUrl: string;
   apiKey: string;
-  models: ModelInfo[];
-  defaultModel: string;
-  apiFormat: 'unified' | 'openai';
+  /** 是否停用该自定义平台 */
+  disabled?: boolean;
   endpoints: ApiEndpoints;
-  enableEnhancePrompt?: boolean;
-  enableUpsample?: boolean;
-  enableWatermark?: boolean;
+  /** 自定义平台统一使用平台级 apiFormat，不依赖模型定义 */
+  apiFormat: ApiFormatType;
+  /** 当前平台的图片上传方式 */
+  imageUploadMode?: ImageUploadMode;
+  /** 自定义平台默认模型 id */
+  defaultModel?: string;
+  /** 自定义平台模型列表 */
+  models?: CustomModelDef[];
 }
 
-export interface Config {
-  downloadPath: string;
-  autoDownload: boolean;
-  platforms: PlatformConfig[];
-  activePlatformId: string;
-  uploadCk: string;
+// ─── 运行时平台（代码定义 + 用户覆盖合并后的结果）────────────
+export interface RuntimePlatform {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  endpoints: ApiEndpoints;
+  defaultModel: string;
+  models: ModelDef[];
+  paramOverrides: Record<string, UserParamOverride>;
+  /** 当前平台的图片上传方式 */
+  imageUploadMode?: ImageUploadMode;
+  /** 透传平台级图片上传配置，供 ImageUploader 使用 */
+  imageUploadConfig?: import('../services/imageUpload').ImageUploaderConfig;
+  /** 自定义平台的 apiFormat（优先级高于模型级 apiFormat） */
+  apiFormat?: ApiFormatType;
 }
 
+// ─── 视频生成请求（内部统一格式）────────────────────────────
 export interface VideoGenerationRequest {
   model: string;
   prompt: string;
   image?: string | string[];
   image_tail?: string;
-  async: boolean;
+  images?: string[];
+  video?: string | string[];
+  audio?: string | string[];
+  extra_body?: Record<string, unknown>;
+  async?: boolean;
   aspect_ratio?: string;
   resolution?: string;
-  duration?: number;
-  n?: number;
-  stream?: boolean;
-  
+  duration?: number | string;
   enhance_prompt?: boolean;
   enable_upsample?: boolean | string;
-  images?: string[];
+  watermark?: boolean | string;
   seconds?: string | number;
   size?: string;
-  watermark?: boolean | string;
+  n?: number;
+  [key: string]: unknown;
 }
 
+export type TaskStatus = 'pending' | 'running' | 'succeed' | 'failed' | 'cancelled';
+export type DownloadStatus = 'waiting' | 'downloading' | 'downloaded' | 'failed';
+
+// ─── API 响应 ────────────────────────────────────────────────
 export interface VideoGenerationResponse {
   task_id: string;
-  task_status: 'pending' | 'running' | 'succeed' | 'failed';
+  task_status: TaskStatus;
   model: string;
   video_result?: Array<{ url: string }>;
   enhanced_prompt?: string;
+  /** 尾帧图 URL（Seedance return_last_frame=true 时返回） */
+  last_frame_url?: string;
+  /** 任务失败时的错误信息 */
+  error_message?: string;
+  created_at?: number;
 }
 
 export interface TaskQueryResponse {
   model: string;
   task_id: string;
-  task_status: 'pending' | 'running' | 'succeed' | 'failed';
+  task_status: TaskStatus;
   video_result?: Array<{ url: string }>;
   enhanced_prompt?: string;
+  /** 尾帧图 URL（Seedance return_last_frame=true 时返回） */
+  last_frame_url?: string;
+  /** 任务失败时的错误信息 */
+  error_message?: string;
+  /** 任务真实创建时间（Unix ms），云端同步时使用 */
+  created_at?: number;
+}
+
+// ─── 任务（TaskContext）──────────────────────────────────────
+export interface Task {
+  id: string;
+  platformId?: string;
+  prompt: string;
+  model: string;
+  mode: GenerationMode;
+  count: number;
+  image_url?: string;
+  image_tail_url?: string;
+  image_urls?: string[];
+  video_urls?: string[];
+  audio_urls?: string[];
+  status: TaskStatus;
+  video_url?: string;
+  /** 尾帧图 URL（Seedance return_last_frame=true 时返回） */
+  last_frame_url?: string;
+  created_at: number;
+  updated_at: number;
+  error_message?: string;
+  enhanced_prompt?: string;
+  /** 平台返回的原始状态，便于排查不同平台状态映射问题 */
+  raw_status?: string;
+  poll_count?: number;
+  /** 连续轮询错误次数 */
+  poll_error_count?: number;
+  /** 连续轮询失败过多时暂停自动轮询，保留手动刷新能力 */
+  poll_paused?: boolean;
+  /** 最近一次轮询错误信息 */
+  last_poll_error?: string;
+  /** 取消来源：云端删除成功或仅本地标记 */
+  cancel_scope?: 'remote' | 'local';
+  auto_download?: boolean;
+  downloaded?: boolean;
+  /** 自动下载状态：与生成状态分离，便于展示下载中/失败等情况 */
+  download_status?: DownloadStatus;
+  /** 自动下载使用的目录快照，避免后续修改全局下载路径影响既有任务 */
+  download_path?: string;
+  /** 自动下载完成后的本地文件路径 */
+  download_file_path?: string;
+  downloaded_at?: number;
+  download_error?: string;
+  /** 提交时保存的完整参数快照（用于复用参数） */
+  saved_params?: Record<string, unknown>;
+  /** 重试次数 */
+  retry_count?: number;
+  /** 重试历史记录 */
+  retry_history?: Array<{
+    time: number;
+    old_error?: string;
+    old_task_id?: string;
+    new_task_id: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+// ─── 图片文件 ────────────────────────────────────────────────
+export interface ImageFile {
+  file: File;
+  url?: string;
+  name: string;
 }
 
 export interface ImageUploadResponse {
@@ -122,110 +292,3 @@ export interface ImageUploadResponse {
     channel: string;
   };
 }
-
-export interface Task {
-  id: string;
-  prompt: string;
-  model: string;
-  mode: GenerationMode;
-  count: number;
-  image_url?: string;
-  image_tail_url?: string;
-  image_urls?: string[];
-  status: 'pending' | 'running' | 'succeed' | 'failed';
-  video_url?: string;
-  created_at: number;
-  updated_at: number;
-  error_message?: string;
-  auto_download?: boolean;
-  downloaded?: boolean;
-}
-
-export interface ImageFile {
-  file: File;
-  url?: string;
-  name: string;
-}
-
-export type GenerationMode = 'text' | 'image' | 'imageTail' | 'multiImage';
-
-export const defaultPlatforms: PlatformConfig[] = [
-  {
-    id: 'geekai',
-    name: '极客智坊',
-    baseUrl: 'https://geekai.co/api',
-    apiKey: '',
-    apiFormat: 'unified',
-    defaultModel: 'veo-3.1-fast-generate-preview',
-    enableEnhancePrompt: false,
-    enableUpsample: false,
-    endpoints: {
-      createVideo: '/v1/videos/generations',
-      queryTask: '/v1/videos/{id}',
-    },
-    models: [
-      { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast Preview', label: 'Veo 3.1 Fast Preview (推荐)', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified'] },
-      { id: 'veo-3.1-generate-preview', name: 'Veo 3.1 Preview', label: 'Veo 3.1 Preview', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified'] },
-      { id: 'veo-3.1-lite-generate-preview', name: 'Veo 3.1 Lite Preview', label: 'Veo 3.1 Lite Preview', supportedModes: ['text'], supportedApiFormats: ['unified'] },
-      { id: 'veo-3.0-fast-generate-001', name: 'Veo 3 快速版', label: 'Veo 3 快速版', supportedModes: ['text', 'image'], supportedApiFormats: ['unified'] },
-      { id: 'veo-3.0-generate-001', name: 'Veo 3', label: 'Veo 3', supportedModes: ['text', 'image'], supportedApiFormats: ['unified'] },
-      { id: 'veo-2.0-generate-001', name: 'Veo 2', label: 'Veo 2', supportedModes: ['text'], supportedApiFormats: ['unified'] },
-      { id: 'cogvideox-flash', name: 'CogVideoX Flash', label: 'CogVideoX Flash (文生视频)', supportedModes: ['text'], supportedApiFormats: ['unified'] },
-      { id: 'kling-v1-6', name: 'Kling V1.6', label: 'Kling V1.6 (图生视频)', supportedModes: ['image'], supportedApiFormats: ['unified'] },
-    ],
-  },
-  {
-    id: 'apizzz',
-    name: 'Apizzz',
-    baseUrl: 'https://apizzz.com',
-    apiKey: '',
-    apiFormat: 'unified',
-    defaultModel: 'veo3.1-fast',
-    enableEnhancePrompt: true,
-    enableUpsample: true,
-    endpoints: {
-      createVideo: '/v1/video/create',
-      queryTask: '/v1/video/query',
-    },
-    models: [
-      { id: 'veo3.1-fast', name: 'Veo 3.1 Fast', label: 'Veo 3.1 Fast', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified', 'openai'], resolution: '1080p' },
-      { id: 'veo3.1', name: 'Veo 3.1', label: 'Veo 3.1', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified', 'openai'], resolution: '1080p' },
-      { id: 'veo3.1-pro', name: 'Veo 3.1 Pro', label: 'Veo 3.1 Pro', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3.1-4k', name: 'Veo 3.1 4K', label: 'Veo 3.1 4K', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified'], resolution: '4k' },
-      { id: 'veo3.1-pro-4k', name: 'Veo 3.1 Pro 4K', label: 'Veo 3.1 Pro 4K', supportedModes: ['text', 'image', 'imageTail'], supportedApiFormats: ['unified'], resolution: '4k' },
-      { id: 'veo3.1-components', name: 'Veo 3.1 Components', label: 'Veo 3.1 Components', supportedModes: ['multiImage'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3-fast', name: 'Veo 3 Fast', label: 'Veo 3 Fast', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3', name: 'Veo 3', label: 'Veo 3', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3-fast-frames', name: 'Veo 3 Fast Frames', label: 'Veo 3 Fast Frames', supportedModes: ['image'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3-frames', name: 'Veo 3 Frames', label: 'Veo 3 Frames', supportedModes: ['image'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3-pro', name: 'Veo 3 Pro', label: 'Veo 3 Pro', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo3-pro-frames', name: 'Veo 3 Pro Frames', label: 'Veo 3 Pro Frames', supportedModes: ['image'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2-fast', name: 'Veo 2 Fast', label: 'Veo 2 Fast', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2', name: 'Veo 2', label: 'Veo 2', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2-fast-frames', name: 'Veo 2 Fast Frames', label: 'Veo 2 Fast Frames (首尾帧)', supportedModes: ['image', 'imageTail'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2-fast-components', name: 'Veo 2 Fast Components', label: 'Veo 2 Fast Components (多图)', supportedModes: ['multiImage'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2-pro', name: 'Veo 2 Pro', label: 'Veo 2 Pro', supportedModes: ['text'], supportedApiFormats: ['unified'], resolution: '1080p' },
-      { id: 'veo2-pro-components', name: 'Veo 2 Pro Components', label: 'Veo 2 Pro Components', supportedModes: ['multiImage'], supportedApiFormats: ['unified'], resolution: '1080p' },
-    ],
-  },
-  {
-    id: 'apizzz-openai',
-    name: 'Apizzz (OpenAI格式)',
-    baseUrl: 'https://apizzz.com',
-    apiKey: '',
-    apiFormat: 'openai',
-    defaultModel: 'veo_3_1',
-    enableEnhancePrompt: false,
-    enableUpsample: false,
-    enableWatermark: true,
-    endpoints: {
-      createVideo: '/v1/videos',
-      queryTask: '/v1/videos/{id}',
-      downloadVideo: '/v1/videos/{id}/content',
-    },
-    models: [
-      { id: 'veo_3_1', name: 'Veo 3.1', label: 'Veo 3.1', supportedModes: ['text', 'image'], supportedApiFormats: ['openai'] },
-      { id: 'veo_3_1-fast', name: 'Veo 3.1 Fast', label: 'Veo 3.1 Fast', supportedModes: ['text', 'image'], supportedApiFormats: ['openai'] },
-    ],
-  },
-];
