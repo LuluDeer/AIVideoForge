@@ -5,6 +5,35 @@ import * as https from 'https';
 import * as fs from 'fs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const IPC_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const assertHttpsUrl = (value: unknown): URL => {
+  if (typeof value !== 'string') throw new Error('URL 参数无效');
+  const parsed = new URL(value);
+  if (parsed.protocol !== 'https:') throw new Error('仅允许 HTTPS 请求');
+  return parsed;
+};
+
+const readResponseBody = (res: NodeJS.ReadableStream, limit = MAX_RESPONSE_BYTES): Promise<string> => new Promise((resolve, reject) => {
+  let data = '';
+  let size = 0;
+  res.on('data', (chunk: Buffer | string) => {
+    size += Buffer.byteLength(chunk);
+    if (size > limit) {
+      reject(new Error('响应体过大'));
+      if ('destroy' in res && typeof res.destroy === 'function') res.destroy();
+      return;
+    }
+    data += chunk;
+  });
+  res.on('end', () => resolve(data));
+  res.on('error', reject);
+});
 
 const getAdaptiveWindowBounds = () => {
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
@@ -126,92 +155,90 @@ ipcMain.handle('set-cookies', async (_event, ck) => {
 
 ipcMain.handle('make-request', async (_event, reqUrl, options) => {
   return new Promise((resolve, reject) => {
-    const urlObj = new URL(reqUrl);
-    
-    const headers: Record<string, string> = {
-      'Cookie': options.headers?.Cookie || '',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      'Origin': 'https://geekai.co',
-      'Referer': 'https://geekai.co/chat',
-      ...options.headers,
-    };
-    
-    const reqOptions = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      method: options.method || 'GET',
-      headers,
-    };
-    
-    const req = https.request(reqOptions, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        resolve({
-          status: res.statusCode,
-          body: data,
-          headers: res.headers as Record<string, string>,
-        });
+    try {
+      const urlObj = assertHttpsUrl(reqUrl);
+      const requestOptions = isRecord(options) ? options : {};
+      const method = typeof requestOptions.method === 'string' ? requestOptions.method.toUpperCase() : 'GET';
+      if (!['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'].includes(method)) throw new Error('不支持的请求方法');
+      const inputHeaders = isRecord(requestOptions.headers) ? requestOptions.headers : {};
+      const headers: Record<string, string> = {
+        'Cookie': typeof inputHeaders.Cookie === 'string' ? inputHeaders.Cookie : '',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Origin': 'https://geekai.co',
+        'Referer': 'https://geekai.co/chat',
+      };
+      for (const [key, value] of Object.entries(inputHeaders)) {
+        if (typeof value === 'string') headers[key] = value;
+      }
+      const req = https.request({
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        method,
+        headers,
+      }, async (res) => {
+        try {
+          const body = await readResponseBody(res);
+          resolve({ status: res.statusCode, body, headers: res.headers as Record<string, string> });
+        } catch (error) {
+          reject(error);
+        }
       });
-    });
-    
-    req.on('error', (e) => {
-      reject(e);
-    });
-    
-    if (options.body) {
-      req.write(typeof options.body === 'string' ? options.body : JSON.stringify(options.body));
+      req.setTimeout(IPC_TIMEOUT_MS, () => req.destroy(new Error('请求超时')));
+      req.on('error', reject);
+      if (requestOptions.body) {
+        req.write(typeof requestOptions.body === 'string' ? requestOptions.body : JSON.stringify(requestOptions.body));
+      }
+      req.end();
+    } catch (error) {
+      reject(error);
     }
-    req.end();
   });
 });
 
 ipcMain.handle('upload-to-cos', async (_event, bufferArray, options) => {
   return new Promise((resolve, reject) => {
-    const buffer = Buffer.from(bufferArray);
-    const urlObj = new URL(options.url);
-    
-    const headers: Record<string, string> = {
-      'Content-Type': options.headers['Content-Type'] || 'application/octet-stream',
-      'Content-Length': String(buffer.length),
-      'Host': urlObj.hostname,
-      ...options.headers,
-    };
-    
-    console.log('[DEBUG] COS Upload Headers:', headers);
-    console.log('[DEBUG] COS Upload URL:', options.url);
-    console.log('[DEBUG] COS Upload Buffer Length:', buffer.length);
-    
-    const reqOptions = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      method: 'PUT',
-      headers,
-    };
-    
-    const req = https.request(reqOptions, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        console.log('[DEBUG] COS Response Status:', res.statusCode);
-        console.log('[DEBUG] COS Response Body:', data);
-        if (res.statusCode === 200) {
-          resolve({ success: true, status: res.statusCode });
-        } else {
-          reject(new Error(`COS上传失败: ${res.statusCode}, 响应: ${data}`));
+    try {
+      if (!Array.isArray(bufferArray)) throw new Error('上传内容无效');
+      const buffer = Buffer.from(bufferArray);
+      if (buffer.length <= 0 || buffer.length > MAX_UPLOAD_BYTES) throw new Error('上传文件大小无效');
+      const urlObj = assertHttpsUrl(isRecord(options) ? options.url : undefined);
+      const inputHeaders = isRecord(options) && isRecord(options.headers) ? options.headers : {};
+      const allowedHeaders = new Set(['Content-Type', 'Authorization', 'x-cos-security-token']);
+      const headers: Record<string, string> = {
+        'Content-Type': typeof inputHeaders['Content-Type'] === 'string' ? inputHeaders['Content-Type'] : 'application/octet-stream',
+        'Content-Length': String(buffer.length),
+        'Host': urlObj.hostname,
+      };
+      for (const [key, value] of Object.entries(inputHeaders)) {
+        if (allowedHeaders.has(key) && typeof value === 'string') headers[key] = value;
+      }
+      if (!headers.Authorization || !headers['x-cos-security-token']) throw new Error('COS 上传凭证缺失');
+      const req = https.request({
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        method: 'PUT',
+        headers,
+      }, async (res) => {
+        try {
+          const data = await readResponseBody(res, 1024 * 1024);
+          if (res.statusCode === 200 || res.statusCode === 204) {
+            resolve({ success: true, status: res.statusCode });
+          } else {
+            reject(new Error(`COS上传失败: ${res.statusCode}, 响应: ${data}`));
+          }
+        } catch (error) {
+          reject(error);
         }
       });
-    });
-    
-    req.on('error', (e) => {
-      console.error('[DEBUG] COS Upload Error:', e);
-      reject(e);
-    });
-    
-    req.write(buffer);
-    req.end();
+      req.setTimeout(IPC_TIMEOUT_MS, () => req.destroy(new Error('COS上传超时')));
+      req.on('error', reject);
+      req.write(buffer);
+      req.end();
+    } catch (error) {
+      reject(error);
+    }
   });
 });
 

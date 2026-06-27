@@ -41,6 +41,9 @@ const optionalApiFormat = (value: unknown): ApiFormatType | undefined =>
 const imageUploadMode = (value: unknown, fallback: AppConfig['imageUploadMode']): AppConfig['imageUploadMode'] =>
   value === 'geekai' || value === 'base64' || value === 'url' ? value : fallback;
 
+const normalizePlatformId = (value: string): string =>
+  value === 'doubao-official' ? 'seedance' : value;
+
 const sanitizeOptions = (value: unknown) => Array.isArray(value)
   ? value.filter(isRecord).map(opt => ({
       label: str(opt.label),
@@ -181,7 +184,7 @@ export function normalizeAppConfig(
 
   return stripUndefined({
     schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-    activePlatformId: str(value.activePlatformId, current.activePlatformId) === 'doubao-official' ? 'seedance' : str(value.activePlatformId, current.activePlatformId),
+    activePlatformId: normalizePlatformId(str(value.activePlatformId, current.activePlatformId)),
     platforms: sanitizePlatforms(value.platforms, current.platforms, includeSecrets),
     customPlatforms: sanitizeCustomPlatforms(value.customPlatforms, current.customPlatforms, includeSecrets),
     downloadPath: str(value.downloadPath, current.downloadPath),

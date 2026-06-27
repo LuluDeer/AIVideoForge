@@ -35,6 +35,8 @@ const MAX_AUDIO_SIZE_BYTES = 50 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 const ALLOWED_AUDIO_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg']);
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|avi)$/i;
+const AUDIO_EXT_RE = /\.(mp3|wav|m4a|aac|ogg)$/i;
 
 type ImageUploadData = ImageUploadResponse['data'];
 type CosCredential = { secret_id: string; secret_key: string; token: string };
@@ -310,7 +312,21 @@ class ImageUploader {
   }
 
   private getAttachmentMime(file: File): string {
-    return file.type || 'application/octet-stream';
+    if (file.type) return file.type;
+    const ext = this.getFileExtension(file.name);
+    const mimeByExt: Record<string, string> = {
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      mov: 'video/quicktime',
+      m4v: 'video/mp4',
+      avi: 'video/x-msvideo',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      m4a: 'audio/mp4',
+      aac: 'audio/aac',
+      ogg: 'audio/ogg',
+    };
+    return mimeByExt[ext] ?? 'application/octet-stream';
   }
 
   private getCosFolder(kind: UploadKind): 'image' | 'file' {
@@ -420,10 +436,10 @@ class ImageUploader {
     if (!file || !(file instanceof File)) throw new Error(`请选择有效的${kind === 'video' ? '视频' : '音频'}文件`);
     if (file.size <= 0) throw new Error(`${kind === 'video' ? '视频' : '音频'}文件为空`);
     if (kind === 'video') {
-      if (!ALLOWED_VIDEO_TYPES.has(file.type)) throw new Error('仅支持 MP4、WebM 或 MOV 视频');
+      if (!ALLOWED_VIDEO_TYPES.has(file.type) && !VIDEO_EXT_RE.test(file.name)) throw new Error('仅支持 MP4、WebM、MOV、M4V 或 AVI 视频');
       if (file.size > MAX_VIDEO_SIZE_BYTES) throw new Error('视频过大，请选择 200MB 以内的视频');
     } else {
-      if (!ALLOWED_AUDIO_TYPES.has(file.type)) throw new Error('仅支持 MP3、WAV、M4A、AAC 或 OGG 音频');
+      if (!ALLOWED_AUDIO_TYPES.has(file.type) && !AUDIO_EXT_RE.test(file.name)) throw new Error('仅支持 MP3、WAV、M4A、AAC 或 OGG 音频');
       if (file.size > MAX_AUDIO_SIZE_BYTES) throw new Error('音频过大，请选择 50MB 以内的音频');
     }
 

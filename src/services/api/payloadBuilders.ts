@@ -1,12 +1,14 @@
 import type { ApiFormatType, RuntimePlatform, VideoGenerationRequest } from '../../types';
 import { getFirstImage, getImageList, isEnabled, isPresent } from './utils';
 
+const MEDIA_PARAM_TYPES = new Set(['image', 'image-multi', 'video', 'video-multi', 'audio', 'audio-multi']);
+
 const buildApiKeyMap = (platform: RuntimePlatform, modelId: string): Map<string, string> => {
   const model = platform.models.find(m => m.id === modelId);
   const keyMap = new Map<string, string>();
   if (model) {
     for (const param of model.params) {
-      if (param.apiKey) keyMap.set(param.key, param.apiKey);
+      if (param.apiKey && !MEDIA_PARAM_TYPES.has(param.type)) keyMap.set(param.key, param.apiKey);
     }
   }
   return keyMap;
@@ -120,14 +122,14 @@ export const buildSeedanceRequest = (platform: RuntimePlatform, request: VideoGe
   }
 
   const model = platform.models.find(m => m.id === request.model);
-  const imageParamKeys = model?.params
+  const mediaParamKeys = model?.params
     .filter(param => param.type === 'image' || param.type === 'image-multi' || param.type === 'video' || param.type === 'video-multi' || param.type === 'audio' || param.type === 'audio-multi')
     .map(param => param.key) ?? [];
 
   const excludedKeys = new Set([
     'prompt', 'image', 'image_tail', 'images', 'video', 'audio',
     'async', 'seconds', 'size', 'n', 'stream', 'tools_web_search',
-    ...imageParamKeys,
+    ...mediaParamKeys,
   ]);
 
   const keyMap = buildApiKeyMap(platform, request.model);

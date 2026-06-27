@@ -354,9 +354,10 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
       }
     });
 
-    // 写入固定值参数
+    // 写入当前模式生效的固定值参数，避免跨模式隐藏参数污染请求。
     resolvedParams.forEach(({ def, resolved }) => {
-      if (resolved.fixedValue !== undefined) {
+      const matchesMode = !def.modes || def.modes.length === 0 || def.modes.includes(mode);
+      if (matchesMode && !resolved.hidden && resolved.fixedValue !== undefined) {
         req[def.key] = resolved.fixedValue;
       }
     });
