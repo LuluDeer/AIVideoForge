@@ -993,7 +993,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-red-700 text-sm">
+        <div className="mb-4 flex items-center gap-2 border-l-4 border-red-400 bg-red-50/70 px-3 py-2 text-sm text-red-700 shadow-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <button onClick={() => setError('')} className="text-red-400 hover:text-red-600" title="关闭">
@@ -1232,7 +1232,10 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
               <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">请选择模型后再生成。找不到新模型时，去配置页「模型管理」手动添加模型 ID。</p>
             )}
             {generateBlockerHint && (
-              <p className="mb-3 text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">{generateBlockerHint}</p>
+              <div className="mb-3 flex items-start gap-2 border-l-4 border-amber-300 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-700">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{generateBlockerHint}</span>
+              </div>
             )}
             <button
               onClick={isGenerating ? handleStopGenerate : handleGenerate}
@@ -1262,17 +1265,14 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
               <button
                 type="button"
                 onClick={() => setShowRequestPreview(v => !v)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-gray-50"
+                className="group flex w-full items-center justify-between py-1.5 text-left"
                 aria-expanded={showRequestPreview}
               >
-                <span>
-                  <span className="block text-xs font-semibold text-gray-700">request_body 预览</span>
-                  <span className="mt-0.5 block text-[11px] text-gray-400">默认折叠；展开后用于排查实际请求参数。</span>
-                </span>
-                <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${showRequestPreview ? 'rotate-180' : '-rotate-90'}`} />
+                <span className="text-xs text-gray-500 group-hover:text-gray-800">请求体参数JSON预览</span>
+                <ChevronDown className={`h-4 w-4 text-gray-300 transition-transform group-hover:text-gray-500 ${showRequestPreview ? 'rotate-180' : ''}`} />
               </button>
               {showRequestPreview && (
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] leading-5 text-gray-800">
+                <pre className="mt-2 max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-[11px] leading-5 text-gray-800">
                   <code>{requestPreviewJson}</code>
                 </pre>
               )}

@@ -13,7 +13,7 @@ const CustomPlatformCard: React.FC<{
   onUpdate: (updates: Partial<CustomPlatformDef>) => void;
   onRemove: () => void;
 }> = ({ platform, onUpdate, onRemove }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [tab, setTab] = useState<'basic' | 'models' | 'params'>('basic');
   const models = platform.models ?? [];
@@ -26,25 +26,33 @@ const CustomPlatformCard: React.FC<{
   const updateModelParams = (modelId: string, params: ParamDef[]) => {
     updateModels(models.map(model => model.id === modelId ? { ...model, params } : model));
   };
+  const toggleDisabled = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onUpdate({ disabled: !platform.disabled });
+  };
+  const removePlatform = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onRemove();
+  };
 
   return (
-    <div className="border border-orange-200 rounded-xl bg-white shadow-sm">
-      <div className="flex items-center gap-3 px-4 py-3 bg-orange-50/70">
-        <button type="button" onClick={() => setExpanded(v => !v)} className="rounded-lg p-1 text-orange-500 hover:bg-orange-100">
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </button>
+    <div className={`rounded-xl border bg-white transition-shadow ${expanded ? 'border-orange-200 shadow-md' : 'border-gray-200'}`}>
+      <div className="flex cursor-pointer items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50" onClick={() => setExpanded(v => !v)}>
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${platform.disabled ? 'bg-red-400 shadow-[0_0_0_4px_rgba(239,68,68,0.12)]' : 'bg-green-400 shadow-[0_0_0_4px_rgba(34,197,94,0.12)]'}`} title={platform.disabled ? '平台已停用' : '平台已启用'} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold leading-normal text-gray-800 break-words">{platform.name || '自定义平台'}</p>
           <p className="text-xs leading-normal text-gray-400 break-all">{platform.baseUrl || '未填写 Base URL'}</p>
         </div>
-        <span className="inline-flex min-h-6 items-center rounded-md bg-white px-2 py-0.5 text-xs leading-normal text-orange-600 border border-orange-100">{platform.apiFormat}</span>
-        <button type="button" role="switch" aria-checked={!platform.disabled} onClick={() => onUpdate({ disabled: !platform.disabled })} className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-100 ${platform.disabled ? 'border-red-200 bg-red-100' : 'border-green-200 bg-green-500'}`} title={platform.disabled ? '启用平台' : '停用平台'}>
-          <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${platform.disabled ? 'translate-x-0.5' : 'translate-x-5'}`} />
-        </button>
-        <button onClick={onRemove} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500" title="删除平台">
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex min-h-6 items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs leading-normal text-gray-500">{models.length} 个模型</span>
+          <button type="button" role="switch" aria-checked={!platform.disabled} onClick={toggleDisabled} className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-100 ${platform.disabled ? 'border-red-200 bg-red-100' : 'border-green-200 bg-green-500'}`} title={platform.disabled ? '启用平台' : '停用平台'}>
+            <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${platform.disabled ? 'translate-x-0.5' : 'translate-x-5'}`} />
+          </button>
+          <button type="button" onClick={removePlatform} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500" title="删除平台">
+            <Trash2 className="w-4 h-4" />
+          </button>
+          {expanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+        </div>
       </div>
       {expanded && (
         <div>
@@ -55,7 +63,7 @@ const CustomPlatformCard: React.FC<{
               </button>
             ))}
           </div>
-          <div className="p-4">
+          <div className="p-4 bg-white">
             {tab === 'basic' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

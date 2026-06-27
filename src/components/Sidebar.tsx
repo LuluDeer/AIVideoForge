@@ -55,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, runningCount 
         <span className="sidebar-footer__dot" />
         <div>
           <p>本地工作区</p>
-          <small>v1.2.0 · React/Vite</small>
+          <small>v1.0.5 · React/Vite</small>
         </div>
       </div>
     </aside>

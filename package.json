@@ -1,11 +1,11 @@
 {
   "name": "video_gen",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "electron/main.ts",
   "type": "module",
   "description": "视频批量生成工具",
-  "author": "GeekAI",
+  "author": "Kirdeer",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

@@ -180,55 +180,28 @@ const ConfigPage: React.FC = () => {
         </div>
       )}
 
-      <section className="mb-6">
-        <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <p className="font-semibold">官方接口说明</p>
-          <p className="mt-1 text-xs leading-5">「火山方舟」和「豆包官方」在本客户端中指向同一套官方视频生成 API。旧版 doubao-official 配置会自动兼容到当前官方平台，不需要重复配置两份 API Key。</p>
-        </div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">平台与模型</h3>
-        <div className="space-y-3">
-          {PLATFORM_DEFS.map(def => <BuiltinPlatformCard key={def.id} platformId={def.id} />)}
-        </div>
-      </section>
-
-      <section className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">自定义平台 / 中转站</h3>
-          <button onClick={() => addCustomPlatform(emptyPlatform())} className="new-platform-button flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-orange-500 rounded-lg hover:bg-orange-600">
-            <Plus className="w-3.5 h-3.5" />新增平台
-          </button>
-        </div>
-        {(appConfig.customPlatforms ?? []).length === 0 ? (
-          <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-            <p className="text-sm text-gray-400">还没有自定义平台</p>
-            <p className="text-xs text-gray-300 mt-1">点击「新增平台」对接任意兼容 API</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {(appConfig.customPlatforms ?? []).map(platform => (
-              <CustomPlatformCard key={platform.id} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
-            ))}
-          </div>
-        )}
-      </section>
 
       <section>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">系统设置</h3>
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
           <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={appConfig.autoDownload}
-                    onChange={e => updateAppConfig({ autoDownload: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  任务完成后自动下载视频
-                </label>
-                <p className="mt-1 text-xs leading-5 text-gray-500">开启后，新提交的任务会保存当前下载目录快照；之后修改全局目录不会影响这些任务的自动下载位置。</p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm font-medium text-gray-700">自动下载视频</span>
+                  <span className="text-xs leading-5 text-gray-500">开启后，新任务会保存当前下载目录快照，后续修改全局目录不影响既有任务。</span>
+                </div>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={appConfig.autoDownload}
+                onClick={() => updateAppConfig({ autoDownload: !appConfig.autoDownload })}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.autoDownload ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
+                title={appConfig.autoDownload ? '关闭自动下载' : '开启自动下载'}
+              >
+                <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appConfig.autoDownload ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
             </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
@@ -273,6 +246,35 @@ const ConfigPage: React.FC = () => {
           </div>
         </div>
       </section>
+      
+      <section className="mb-6">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">平台与模型</h3>
+        <div className="space-y-3">
+          {PLATFORM_DEFS.map(def => <BuiltinPlatformCard key={def.id} platformId={def.id} />)}
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">自定义平台 / 中转站</h3>
+          <button onClick={() => addCustomPlatform(emptyPlatform())} className="new-platform-button flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-orange-500 rounded-lg hover:bg-orange-600">
+            <Plus className="w-3.5 h-3.5" />新增平台
+          </button>
+        </div>
+        {(appConfig.customPlatforms ?? []).length === 0 ? (
+          <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl bg-white">
+            <p className="text-sm text-gray-400">还没有自定义平台</p>
+            <p className="text-xs text-gray-300 mt-1">点击「新增平台」对接任意兼容 API</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {(appConfig.customPlatforms ?? []).map(platform => (
+              <CustomPlatformCard key={platform.id} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
+            ))}
+          </div>
+        )}
+      </section>
+
     </div>
   );
 };
