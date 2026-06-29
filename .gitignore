@@ -31,3 +31,4 @@ release
 *.exe
 *.blockmap
 *.yml
+!.github/**/*.yml

@@ -1,4 +1,22 @@
-# AIVideoForge - AI 视频工坊
+# AIVideoForge — AI 视频工坊
+
+<p align="center">
+  <img src="public-build/app-icon.png" alt="AIVideoForge" width="120">
+</p>
+
+<p align="center">
+  <strong>多平台 AI 视频批量生成桌面工作台</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/LuluDeer/AIVideoForge/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/LuluDeer/AIVideoForge/release.yml?branch=main&style=for-the-badge&label=Build" alt="Build status"></a>
+  <a href="https://github.com/LuluDeer/AIVideoForge/releases"><img src="https://img.shields.io/github/v/release/LuluDeer/AIVideoForge?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows-0078d7.svg?style=for-the-badge&logo=windows" alt="Windows">
+  <img src="https://img.shields.io/badge/Electron-42-47848F.svg?style=for-the-badge&logo=electron&logoColor=white" alt="Electron">
+</p>
+
+---
 
 AIVideoForge 是一个面向 AI 视频创作者、运营团队和开发者的多平台 AI 视频批量生成桌面工作台。项目基于 React、TypeScript、Vite 与 Electron 构建，支持多平台视频生成接口统一接入、文生视频、图生视频、首尾帧、多图生成、多模态参考、任务轮询、失败重试、自动下载、模型参数管理与安全配置导入导出。
 

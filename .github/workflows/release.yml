@@ -1,0 +1,59 @@
+name: Release Windows Installer
+
+# 触发条件：推送 v* 格式的 tag（如 v1.0.6）时触发
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Node.js 环境
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. 安装依赖
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. 构建 Electron Windows 安装包
+      - name: Build Windows installer
+        run: npm run electron:build
+        env:
+          # 如果你有 electron-builder 的 code signing 证书可在此配置
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. 上传构建产物（便于调试，可选）
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/*.exe
+          retention-days: 7
+
+      # 6. 发布到 GitHub Releases
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 自动从 tag 名称生成 release 名称
+          name: AIVideoForge ${{ github.ref_name }}
+          # 自动生成更新日志（列出自上次 tag 以来的 commits）
+          generate_release_notes: true
+          # 上传 release 目录下的安装包和压缩包
+          files: |
+            release/*.exe
+            release/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
