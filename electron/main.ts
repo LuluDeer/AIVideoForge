@@ -49,7 +49,7 @@ const getAdaptiveWindowBounds = () => {
 const getAppIconPath = () => (
   app.isPackaged
     ? path.join(__dirname, '../dist/app-icon.png')
-    : path.join(__dirname, '../public/app-icon.png')
+    : path.join(__dirname, '../public-build/app-icon.png')
 );
 
 const createWindow = () => {
@@ -66,7 +66,7 @@ const createWindow = () => {
       contextIsolation: true,
       webSecurity: false,
     },
-    title: '极客智坊视频批量生成工具',
+    title: 'AIVideoForge - AI 视频工坊',
   });
 
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {

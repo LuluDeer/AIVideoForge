@@ -1,10 +1,10 @@
 {
-  "name": "video_gen",
+  "name": "ai-video-forge",
   "private": true,
   "version": "1.0.5",
   "main": "electron/main.ts",
   "type": "module",
-  "description": "视频批量生成工具",
+  "description": "AIVideoForge - 多平台 AI 视频批量生成桌面工作台",
   "author": "Kirdeer",
   "scripts": {
     "dev": "vite",
@@ -18,8 +18,9 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.geekai.video-gen",
-    "productName": "视频批量生成工具",
+    "appId": "com.kirdeer.aivideoforge",
+    "productName": "AIVideoForge",
+    "copyright": "Copyright (c) 2026 Kirdeer",
     "directories": {
       "output": "release"
     },
@@ -27,9 +28,10 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "icon": "public-build/app-icon.png",
     "win": {
       "target": "nsis",
-      "icon": "public/app-icon.ico"
+      "icon": "public-build/app-icon.ico"
     },
     "nsis": {
       "oneClick": false,
