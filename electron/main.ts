@@ -46,6 +46,12 @@ const getAdaptiveWindowBounds = () => {
   };
 };
 
+const getAppIconPath = () => (
+  app.isPackaged
+    ? path.join(__dirname, '../dist/app-icon.png')
+    : path.join(__dirname, '../public/app-icon.png')
+);
+
 const createWindow = () => {
   const windowBounds = getAdaptiveWindowBounds();
   const mainWindow = new BrowserWindow({
@@ -53,6 +59,7 @@ const createWindow = () => {
     minWidth: 1100,
     minHeight: 760,
     center: true,
+    icon: getAppIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

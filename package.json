@@ -28,7 +28,8 @@
       "electron/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "public/app-icon.ico"
     },
     "nsis": {
       "oneClick": false,
