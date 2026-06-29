@@ -242,6 +242,7 @@ ipcMain.handle('upload-to-cos', async (_event, bufferArray, options) => {
   });
 });
 
+
 ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],

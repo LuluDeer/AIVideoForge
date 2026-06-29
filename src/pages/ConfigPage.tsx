@@ -242,7 +242,7 @@ const ConfigPage: React.FC = () => {
                 {showUploadCk ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「GeekAI CDN」或上传视频/音频获取 URL 时使用；隐藏时固定显示短掩码，不再按 Cookie 长度铺满圆点。</p>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「GeekAI CDN」或上传视频/音频到 GeekAI 获取 URL 时使用。</p>
           </div>
         </div>
       </section>

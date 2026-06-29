@@ -38,7 +38,7 @@ function mergeToRuntime(platformId: string, userConfig?: UserPlatformConfig): Ru
     defaultModel: def.defaultModel,
     models: def.models,
     paramOverrides: userConfig?.paramOverrides ?? {},
-    imageUploadMode: userConfig?.imageUploadMode ?? 'geekai',
+    imageUploadMode: userConfig?.imageUploadMode ?? (def.id === 'seedance' ? 'base64' : 'geekai'),
     imageUploadConfig: (userConfig?.imageUploadConfig || def.imageUploadConfig)
       ? { ...def.imageUploadConfig, ...userConfig?.imageUploadConfig }
       : undefined,

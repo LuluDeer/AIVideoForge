@@ -273,8 +273,9 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
 
   const handleModeChange = (newMode: GenerationMode) => {
     setMode(newMode);
+    const defaultModel = activePlatform?.models.find(m => m.id === activePlatform.defaultModel && m.modes.includes(newMode));
     const first = activePlatform?.models.find(m => m.modes.includes(newMode));
-    if (first) setSelectedModelId(first.id);
+    if (defaultModel || first) setSelectedModelId((defaultModel ?? first)?.id ?? '');
   };
 
   const promptCategories = ['全部', ...Array.from(new Set(promptLibrary.map(p => p.category)))];
@@ -1353,7 +1354,8 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                           <button
                             type="button"
                             onClick={() => handleInsertPrompt(p.text)}
-                            className="flex-1 text-left text-xs leading-relaxed text-gray-700"
+                            className="prompt-library-item-text flex-1 text-left text-xs leading-relaxed text-gray-700"
+                            style={{ maxHeight: '6.5em', overflowY: 'auto', whiteSpace: 'pre-wrap' }}
                             title="点击填充到空 Prompt；没有空输入框时自动新增"
                           >
                             {p.text}

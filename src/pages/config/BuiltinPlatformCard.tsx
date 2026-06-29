@@ -39,6 +39,12 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
   if (!def) return null;
 
   const endpoints = mergeEndpoints(def.defaultEndpoints, userConfig.endpoints);
+  const defaultUploadMode: ImageUploadMode = platformId === 'seedance' ? 'base64' : 'geekai';
+  const uploadModeOptions = [
+    { value: 'geekai', label: '上传到 GeekAI CDN（需要 ck）' },
+    { value: 'base64', label: '转为 Base64 内联' },
+    { value: 'url', label: '仅 URL 输入（不上传）' },
+  ];
   const baseModelsForEditor: CustomModelDef[] = def.models.map(model => ({
     id: model.id,
     name: model.name,
@@ -103,16 +109,12 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
                 <div>
                   <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">图片上传方式</label>
                   <AppSelect
-                    value={userConfig.imageUploadMode ?? 'geekai'}
+                    value={userConfig.imageUploadMode ?? defaultUploadMode}
                     onChange={e => updateUserPlatformConfig(platformId, { imageUploadMode: e.target.value as ImageUploadMode })}
                     className="w-full"
-                    options={[
-                      { value: 'geekai', label: '上传到 GeekAI CDN（需要 ck）' },
-                      { value: 'base64', label: '转为 Base64 内联' },
-                      { value: 'url', label: '仅 URL 输入（不上传）' },
-                    ]}
+                    options={uploadModeOptions}
                   />
-                  <p className="mt-1 text-xs leading-5 text-gray-400">选择 GeekAI CDN 时，如果未填写上传 Cookie，生成页会阻止本地文件上传，不会调用存储接口。</p>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">GeekAI CDN 需要上传 Cookie；Base64 会把图片内联到请求中；仅 URL 输入不会上传本地图片。</p>
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>

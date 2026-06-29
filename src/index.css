@@ -287,6 +287,14 @@ button.prompt-library-primary:active {
   word-break: break-word;
 }
 
+.prompt-library-item-text {
+  display: block;
+  max-height: calc(1.625em * 4);
+  overflow-y: auto !important;
+  padding-right: 0.25rem;
+  white-space: pre-wrap;
+}
+
 :where(.config-page, .generate-page, .tasks-page) :where(.text-\[10px\]) {
   line-height: 1.35;
 }
