@@ -6,6 +6,7 @@ import * as fs from 'fs';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const IPC_TIMEOUT_MS = 30_000;
+const HEAD_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
@@ -82,7 +83,7 @@ const createWindow = () => {
       responseHeaders: {
         ...details.responseHeaders,
         'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, HEAD, OPTIONS'],
         'Access-Control-Allow-Headers': ['*'],
       },
     });
@@ -166,12 +167,12 @@ ipcMain.handle('make-request', async (_event, reqUrl, options) => {
       const urlObj = assertHttpsUrl(reqUrl);
       const requestOptions = isRecord(options) ? options : {};
       const method = typeof requestOptions.method === 'string' ? requestOptions.method.toUpperCase() : 'GET';
-      if (!['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'].includes(method)) throw new Error('不支持的请求方法');
+      if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) throw new Error('不支持的请求方法');
       const inputHeaders = isRecord(requestOptions.headers) ? requestOptions.headers : {};
       const headers: Record<string, string> = {
         'Cookie': typeof inputHeaders.Cookie === 'string' ? inputHeaders.Cookie : '',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
+        'Accept': method === 'HEAD' ? '*/*' : 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         'Origin': 'https://geekai.co',
         'Referer': 'https://geekai.co/chat',
@@ -186,13 +187,18 @@ ipcMain.handle('make-request', async (_event, reqUrl, options) => {
         headers,
       }, async (res) => {
         try {
+          if (method === 'HEAD') {
+            res.resume();
+            resolve({ status: res.statusCode, body: '', headers: res.headers as Record<string, string> });
+            return;
+          }
           const body = await readResponseBody(res);
           resolve({ status: res.statusCode, body, headers: res.headers as Record<string, string> });
         } catch (error) {
           reject(error);
         }
       });
-      req.setTimeout(IPC_TIMEOUT_MS, () => req.destroy(new Error('请求超时')));
+      req.setTimeout(method === 'HEAD' ? HEAD_TIMEOUT_MS : IPC_TIMEOUT_MS, () => req.destroy(new Error('请求超时')));
       req.on('error', reject);
       if (requestOptions.body) {
         req.write(typeof requestOptions.body === 'string' ? requestOptions.body : JSON.stringify(requestOptions.body));
@@ -248,7 +254,6 @@ ipcMain.handle('upload-to-cos', async (_event, bufferArray, options) => {
     }
   });
 });
-
 
 ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog({

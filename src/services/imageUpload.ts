@@ -38,9 +38,12 @@ const ALLOWED_AUDIO_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/mp4', 'au
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|avi)$/i;
 const AUDIO_EXT_RE = /\.(mp3|wav|m4a|aac|ogg)$/i;
 
+const CACHE_HEAD_TIMEOUT_MS = 5_000;
+
 type ImageUploadData = ImageUploadResponse['data'];
 type CosCredential = { secret_id: string; secret_key: string; token: string };
 type UploadKind = 'image' | 'video' | 'audio';
+type CacheCheckResult = { block: ImageUploadResponse['data'] | null; valid: boolean };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -218,6 +221,7 @@ class ImageUploader {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open(options.method || 'GET', url, true);
+        xhr.timeout = options.method === 'HEAD' ? CACHE_HEAD_TIMEOUT_MS : 0;
         
         xhr.setRequestHeader('Cookie', this.ck);
         xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36');
@@ -225,6 +229,13 @@ class ImageUploader {
         xhr.setRequestHeader('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
         xhr.setRequestHeader('Origin', this.cfg.siteOrigin);
         xhr.setRequestHeader('Referer', `${this.cfg.siteOrigin}/chat`);
+        
+        const optionHeaders = options.headers as Record<string, string> | undefined;
+        if (optionHeaders) {
+          for (const [key, value] of Object.entries(optionHeaders)) {
+            if (key.toLowerCase() !== 'cookie') xhr.setRequestHeader(key, value);
+          }
+        }
         
         if (options.body) {
           xhr.setRequestHeader('Content-Type', 'application/json');
@@ -241,22 +252,51 @@ class ImageUploader {
         xhr.onerror = () => {
           reject(new Error('Network error'));
         };
+        xhr.ontimeout = () => {
+          reject(new Error('Request timeout'));
+        };
         
         xhr.send(typeof options.body === 'string' ? options.body : null);
       });
     }
   }
 
-  async checkBlockCache(md5: string): Promise<ImageUploadResponse['data'] | null> {
+  private normalizeStoragePrefix(): string {
+    return this.cfg.storageUrlPrefix.replace(/\/+$/, '');
+  }
+
+  private parseCosKeyFromUrl(fileUrl: string): string | null {
+    const prefix = `${this.normalizeStoragePrefix()}/`;
+    if (!fileUrl.startsWith(prefix)) return null;
+    const cosKey = fileUrl.slice(prefix.length).split(/[?#]/, 1)[0];
+    return cosKey ? decodeURIComponent(cosKey) : null;
+  }
+
+  private async isCacheFileAlive(fileUrl: string): Promise<boolean> {
+    try {
+      const response = await this.makeRequest(fileUrl, {
+        method: 'HEAD',
+        headers: { Range: 'bytes=0-1' },
+      });
+      return response.status === 200 || response.status === 206;
+    } catch {
+      return false;
+    }
+  }
+
+  async checkBlockCache(md5: string): Promise<CacheCheckResult> {
     try {
       const response = await this.makeRequest(`${this.baseUrl}${this.cfg.cacheCheckEndpoint}/${md5}`, { method: 'GET' });
       if (response.status === 200) {
         const data = parseJson<ImageUploadResponse | null>(response.body, null, isImageUploadResponse);
-        return data?.data ?? null;
+        const block = data?.data ?? null;
+        if (!block?.url) return { block, valid: false };
+        const valid = await this.isCacheFileAlive(block.url);
+        return { block, valid };
       }
-      return null;
+      return { block: null, valid: false };
     } catch {
-      return null;
+      return { block: null, valid: false };
     }
   }
 
@@ -339,11 +379,13 @@ class ImageUploader {
     fileName: string,
     mime: string,
     kind: UploadKind,
+    oldBlock?: ImageUploadResponse['data'] | null,
   ): Promise<string> {
     const fileExt = this.getFileExtension(fileName, kind === 'image' ? 'png' : 'bin');
+    const oldCosKey = oldBlock?.url ? this.parseCosKeyFromUrl(oldBlock.url) : null;
     const now = new Date();
     const uuid = crypto.randomUUID().replace(/-/g, '');
-    const cosKey = `${this.getCosFolder(kind)}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${uuid}.${fileExt}`;
+    const cosKey = oldCosKey ?? `${this.getCosFolder(kind)}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${uuid}.${fileExt}`;
     const cosUrl = `https://${this.cfg.cosBucket}/${cosKey}`;
     const pathname = `/${cosKey}`;
 
@@ -364,7 +406,7 @@ class ImageUploader {
         url: cosUrl,
         headers: cosHeaders,
       });
-      return `${this.cfg.storageUrlPrefix}/${cosKey}`;
+      return `${this.normalizeStoragePrefix()}/${cosKey}`;
     } else {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -378,7 +420,7 @@ class ImageUploader {
         
         xhr.onload = () => {
           if (xhr.status === 200 || xhr.status === 204) {
-            resolve(`${this.cfg.storageUrlPrefix}/${cosKey}`);
+            resolve(`${this.normalizeStoragePrefix()}/${cosKey}`);
           } else {
             reject(new Error(`COS上传失败: ${xhr.status}`));
           }
@@ -419,14 +461,14 @@ class ImageUploader {
     const buffer = await file.arrayBuffer();
     const md5 = await this.computeFileMd5(buffer);
 
-    const cachedBlock = await this.checkBlockCache(md5);
-    if (cachedBlock) {
-      return cachedBlock;
+    const cacheResult = await this.checkBlockCache(md5);
+    if (cacheResult.valid && cacheResult.block) {
+      return cacheResult.block;
     }
 
     const mime = this.getImageMime(file);
     const credential = await this.getCosCredential();
-    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, 'image');
+    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, 'image', cacheResult.block);
     const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'dati');
 
     return blockData;
@@ -446,14 +488,14 @@ class ImageUploader {
     const buffer = await file.arrayBuffer();
     const md5 = await this.computeFileMd5(buffer);
 
-    const cachedBlock = await this.checkBlockCache(md5);
-    if (cachedBlock) {
-      return cachedBlock;
+    const cacheResult = await this.checkBlockCache(md5);
+    if (cacheResult.valid && cacheResult.block) {
+      return cacheResult.block;
     }
 
     const mime = this.getAttachmentMime(file);
     const credential = await this.getCosCredential();
-    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, kind);
+    const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, kind, cacheResult.block);
     const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'chat');
 
     return blockData;
