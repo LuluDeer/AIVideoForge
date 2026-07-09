@@ -1,7 +1,7 @@
 {
   "name": "ai-video-forge",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "main": "electron/main.ts",
   "type": "module",
   "description": "AIVideoForge - 多平台 AI 视频批量生成桌面工作台",

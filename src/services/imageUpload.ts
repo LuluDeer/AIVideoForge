@@ -242,10 +242,15 @@ class ImageUploader {
         }
         
         xhr.onload = () => {
+          const responseHeaders: Record<string, string> = {};
+          try {
+            const ct = xhr.getResponseHeader('Content-Type');
+            if (ct) responseHeaders['content-type'] = ct;
+          } catch {}
           resolve({
             status: xhr.status,
             body: xhr.responseText,
-            headers: {},
+            headers: responseHeaders,
           });
         };
         
@@ -278,7 +283,11 @@ class ImageUploader {
         method: 'HEAD',
         headers: { Range: 'bytes=0-1' },
       });
-      return response.status === 200 || response.status === 206;
+      if (response.status !== 200 && response.status !== 206) return false;
+      // GeekAI CDN 对已删除文件会返回 200 + text/html 首页，必须校验 Content-Type
+      const contentType = (response.headers?.['content-type'] ?? response.headers?.['Content-Type'] ?? '').toLowerCase();
+      if (contentType.includes('text/html')) return false;
+      return true;
     } catch {
       return false;
     }
@@ -468,10 +477,17 @@ class ImageUploader {
 
     const mime = this.getImageMime(file);
     const credential = await this.getCosCredential();
+    // 缓存失效时复用旧COS路径覆盖上传，恢复旧链接访问
     const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, 'image', cacheResult.block);
-    const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'dati');
 
-    return blockData;
+    // block记录不可变：查询同一MD5始终返回最早的block
+    // 旧block存在时（COS文件已覆盖恢复），直接返回旧block，无需创建新block
+    if (cacheResult.block) {
+      return cacheResult.block;
+    }
+
+    // 无旧block记录时，才创建新block
+    return await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'dati');
   }
 
   async uploadFile(file: File, kind: 'video' | 'audio'): Promise<ImageUploadResponse['data']> {
@@ -495,10 +511,17 @@ class ImageUploader {
 
     const mime = this.getAttachmentMime(file);
     const credential = await this.getCosCredential();
+    // 缓存失效时复用旧COS路径覆盖上传，恢复旧链接访问
     const fileUrl = await this.uploadToCos(buffer, credential, file.name, mime, kind, cacheResult.block);
-    const blockData = await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'chat');
 
-    return blockData;
+    // block记录不可变：查询同一MD5始终返回最早的block
+    // 旧block存在时（COS文件已覆盖恢复），直接返回旧block，无需创建新block
+    if (cacheResult.block) {
+      return cacheResult.block;
+    }
+
+    // 无旧block记录时，才创建新block
+    return await this.createBlockRecord(file.name, fileUrl, md5, buffer.byteLength, mime, 'chat');
   }
 }
 
