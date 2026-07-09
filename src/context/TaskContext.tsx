@@ -68,11 +68,7 @@ const normalizeReuseParamsForTargetMode = (task: Task, targetMode: GenerationMod
   return params;
 };
 
-const getReuseTargetMode = (task: Task): GenerationMode => {
-  // Seedance 官方 mini 的“多图生成/图片生成”任务可直接复用第一张图到“图生视频”。
-  if (task.mode === 'multiImage' && isSeedanceMiniModel(task.model)) return 'image';
-  return task.mode;
-};
+const getReuseTargetMode = (task: Task): GenerationMode => task.mode;
 
 export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([]);

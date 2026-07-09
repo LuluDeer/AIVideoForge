@@ -24,20 +24,23 @@ const AppContent: React.FC = () => {
     if (reuseTaskData) setActiveTab('generate');
   }, [reuseTaskData]);
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'config': return <ConfigPage />;
-      case 'tasks': return <TasksPage />;
-      default: return <GeneratePage onNavigateToTasks={() => setActiveTab('tasks')} onNavigateToConfig={() => setActiveTab('config')} />;
-    }
-  };
+  const isConfigTab = activeTab === 'config';
 
   return (
     <div className="app-shell">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} runningCount={runningCount} />
       <main className="app-main">
         <Suspense fallback={<LoadingFallback />}>
-          {renderContent()}
+          {isConfigTab ? (
+            <ConfigPage />
+          ) : (
+            <>
+              <div style={{ display: activeTab === 'generate' ? 'block' : 'none' }}>
+                <GeneratePage onNavigateToTasks={() => setActiveTab('tasks')} onNavigateToConfig={() => setActiveTab('config')} />
+              </div>
+              {activeTab === 'tasks' && <TasksPage />}
+            </>
+          )}
         </Suspense>
       </main>
     </div>
