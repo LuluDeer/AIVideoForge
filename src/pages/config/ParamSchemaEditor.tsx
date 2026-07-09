@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import AppSelect from '../../components/AppSelect';
 import type { GenerationMode, ParamDef, ParamOption } from '../../types';
 import { ALL_MODES } from './constants';
@@ -74,6 +74,12 @@ const ParamSchemaEditor: React.FC<{
   onChange: (params: ParamDef[]) => void;
 }> = ({ params, modelModes, onChange }) => {
   const normalizedParams = params.map(param => normalizeParamForModes(param, modelModes));
+  const [openParamIds, setOpenParamIds] = React.useState<Record<string, boolean>>({});
+  const getParamId = (param: ParamDef, index: number) => `${param.key || 'param'}-${index}`;
+  const toggleParamOpen = (param: ParamDef, index: number) => {
+    const id = getParamId(param, index);
+    setOpenParamIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const updateParam = (index: number, patch: Partial<ParamDef>) => {
     const safePatch = { ...patch };
@@ -130,97 +136,106 @@ const ParamSchemaEditor: React.FC<{
       {normalizedParams.map((param, index) => {
         const typeIsCommon = COMMON_TYPES.some(item => item.value === param.type);
         const typeSelectValue = typeIsCommon ? param.type : '__custom__';
+        const paramId = getParamId(param, index);
+        const isOpen = openParamIds[paramId] ?? false;
         return (
-          <div key={`${param.key}-${index}`} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 break-words">{param.label || param.key || `参数 ${index + 1}`}</p>
-                <p className="mt-0.5 text-xs text-gray-400 break-all">请求字段：{param.apiKey || param.key || '未填写'} · 类型：{param.type}</p>
-              </div>
+          <div key={`${param.key}-${index}`} className="rounded-xl border border-gray-100 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 p-4">
+              <button type="button" onClick={() => toggleParamOpen(param, index)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+                {isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 break-words">{param.label || param.key || `参数 ${index + 1}`}</p>
+                  <p className="mt-0.5 text-xs text-gray-400 break-all">请求字段：{param.apiKey || param.key || '未填写'} · 类型：{param.type}</p>
+                </div>
+              </button>
               <button type="button" onClick={() => removeParam(index)} className={`${MINI_BUTTON_CLASS} border-red-100 bg-white text-red-500 hover:bg-red-50 active:bg-red-50`} title="删除参数">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">内部参数名 / key <span className="text-red-500">*</span></label>
-                <input value={param.key} onChange={e => updateParam(index, { key: e.target.value })} placeholder="duration" className={`${FIELD_CLASS} font-mono`} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">请求字段名 / apiKey</label>
-                <input value={param.apiKey ?? ''} onChange={e => updateParam(index, { apiKey: e.target.value.trim() || undefined })} placeholder="留空则使用 key" className={`${FIELD_CLASS} font-mono`} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">显示名称 <span className="text-red-500">*</span></label>
-                <input value={param.label} onChange={e => updateParam(index, { label: e.target.value })} placeholder="时长" className={FIELD_CLASS} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">参数类型</label>
-                <div className="flex gap-2">
-                  <AppSelect
-                    value={typeSelectValue}
-                    onChange={e => updateParam(index, { type: e.target.value === '__custom__' ? (typeIsCommon ? 'custom' : param.type) : e.target.value })}
-                    className="w-full"
-                    options={[...COMMON_TYPES.map(type => ({ value: type.value, label: type.label })), { value: '__custom__', label: '自定义类型' }]}
-                  />
-                  {typeSelectValue === '__custom__' && (
-                    <input value={param.type} onChange={e => updateParam(index, { type: e.target.value.trim() || 'string' })} placeholder="如 enum/json" className={`${FIELD_CLASS} max-w-[150px]`} />
-                  )}
+            {isOpen && (
+              <div className="space-y-3 border-t border-gray-100 p-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">内部参数名 / key <span className="text-red-500">*</span></label>
+                    <input value={param.key} onChange={e => updateParam(index, { key: e.target.value })} placeholder="duration" className={`${FIELD_CLASS} font-mono`} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">请求字段名 / apiKey</label>
+                    <input value={param.apiKey ?? ''} onChange={e => updateParam(index, { apiKey: e.target.value.trim() || undefined })} placeholder="留空则使用 key" className={`${FIELD_CLASS} font-mono`} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">显示名称 <span className="text-red-500">*</span></label>
+                    <input value={param.label} onChange={e => updateParam(index, { label: e.target.value })} placeholder="时长" className={FIELD_CLASS} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">参数类型</label>
+                    <div className="flex gap-2">
+                      <AppSelect
+                        value={typeSelectValue}
+                        onChange={e => updateParam(index, { type: e.target.value === '__custom__' ? (typeIsCommon ? 'custom' : param.type) : e.target.value })}
+                        className="w-full"
+                        options={[...COMMON_TYPES.map(type => ({ value: type.value, label: type.label })), { value: '__custom__', label: '自定义类型' }]}
+                      />
+                      {typeSelectValue === '__custom__' && (
+                        <input value={param.type} onChange={e => updateParam(index, { type: e.target.value.trim() || 'string' })} placeholder="如 enum/json" className={`${FIELD_CLASS} max-w-[150px]`} />
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">默认值</label>
+                    {param.type === 'boolean' ? (
+                      <AppSelect
+                        value={String(param.defaultValue ?? false)}
+                        onChange={e => updateParam(index, { defaultValue: e.target.value === 'true' })}
+                        className="w-full"
+                        options={[{ value: 'true', label: 'true' }, { value: 'false', label: 'false' }]}
+                      />
+                    ) : (
+                      <input type={param.type === 'number' ? 'number' : 'text'} value={toInputValue(param.defaultValue)} onChange={e => updateParam(index, { defaultValue: parseTypedValue(param.type, e.target.value) })} placeholder="不填则不设置默认值" className={FIELD_CLASS} />
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">固定提交值</label>
+                    <input type={param.type === 'number' ? 'number' : 'text'} value={toInputValue(param.fixedValue)} onChange={e => updateParam(index, { fixedValue: parseTypedValue(param.type, e.target.value) })} placeholder="不填则允许用户在生成页填写" className={FIELD_CLASS} />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">默认值</label>
-                {param.type === 'boolean' ? (
-                  <AppSelect
-                    value={String(param.defaultValue ?? false)}
-                    onChange={e => updateParam(index, { defaultValue: e.target.value === 'true' })}
-                    className="w-full"
-                    options={[{ value: 'true', label: 'true' }, { value: 'false', label: 'false' }]}
-                  />
-                ) : (
-                  <input type={param.type === 'number' ? 'number' : 'text'} value={toInputValue(param.defaultValue)} onChange={e => updateParam(index, { defaultValue: parseTypedValue(param.type, e.target.value) })} placeholder="不填则不设置默认值" className={FIELD_CLASS} />
-                )}
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">固定提交值</label>
-                <input type={param.type === 'number' ? 'number' : 'text'} value={toInputValue(param.fixedValue)} onChange={e => updateParam(index, { fixedValue: parseTypedValue(param.type, e.target.value) })} placeholder="不填则允许用户在生成页填写" className={FIELD_CLASS} />
-              </div>
-            </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">选项列表</label>
-                <textarea value={optionText(param.options)} onChange={e => updateParam(index, { options: parseOptions(e.target.value) })} placeholder="每行一个：显示名=提交值\n例如：16:9=16:9" className="w-full min-h-[88px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-normal text-gray-700 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100" />
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-600">适用模式</label>
-                  <div className="flex flex-wrap gap-2">
-                    {ALL_MODES.map(mode => (
-                      <label key={mode.value} className="flex min-h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
-                        <input type="checkbox" checked={(param.modes ?? []).includes(mode.value)} onChange={() => toggleMode(index, mode.value)} className="h-3.5 w-3.5 rounded accent-blue-500" />
-                        <span>{mode.label}</span>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600">选项列表</label>
+                    <textarea value={optionText(param.options)} onChange={e => updateParam(index, { options: parseOptions(e.target.value) })} placeholder="每行一个：显示名=提交值\n例如：16:9=16:9" className="w-full min-h-[88px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-normal text-gray-700 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-gray-600">适用模式</label>
+                      <div className="flex flex-wrap gap-2">
+                        {ALL_MODES.map(mode => (
+                          <label key={mode.value} className="flex min-h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                            <input type="checkbox" checked={(param.modes ?? []).includes(mode.value)} onChange={() => toggleMode(index, mode.value)} className="h-3.5 w-3.5 rounded accent-blue-500" />
+                            <span>{mode.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
+                        <input type="checkbox" checked={!!param.hidden} onChange={e => updateParam(index, { hidden: e.target.checked || undefined })} className="h-4 w-4 rounded accent-blue-500" />默认隐藏
                       </label>
-                    ))}
+                      <label className="flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
+                        <input type="checkbox" checked={!!param.required} onChange={e => updateParam(index, { required: e.target.checked || undefined })} className="h-4 w-4 rounded accent-blue-500" />必填
+                      </label>
+                    </div>
+                    {(param.type === 'image-multi' || param.type === 'video-multi' || param.type === 'audio-multi') && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" value={param.imageLimits?.min ?? ''} onChange={e => updateParam(index, { imageLimits: { ...param.imageLimits, min: e.target.value ? Number(e.target.value) : undefined } })} placeholder="最少数量" className={FIELD_CLASS} />
+                        <input type="number" value={param.imageLimits?.max ?? ''} onChange={e => updateParam(index, { imageLimits: { ...param.imageLimits, max: e.target.value ? Number(e.target.value) : undefined } })} placeholder="最多数量" className={FIELD_CLASS} />
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
-                    <input type="checkbox" checked={!!param.hidden} onChange={e => updateParam(index, { hidden: e.target.checked || undefined })} className="h-4 w-4 rounded accent-blue-500" />默认隐藏
-                  </label>
-                  <label className="flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600">
-                    <input type="checkbox" checked={!!param.required} onChange={e => updateParam(index, { required: e.target.checked || undefined })} className="h-4 w-4 rounded accent-blue-500" />必填
-                  </label>
-                </div>
-                {(param.type === 'image-multi' || param.type === 'video-multi' || param.type === 'audio-multi') && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="number" value={param.imageLimits?.min ?? ''} onChange={e => updateParam(index, { imageLimits: { ...param.imageLimits, min: e.target.value ? Number(e.target.value) : undefined } })} placeholder="最少数量" className={FIELD_CLASS} />
-                    <input type="number" value={param.imageLimits?.max ?? ''} onChange={e => updateParam(index, { imageLimits: { ...param.imageLimits, max: e.target.value ? Number(e.target.value) : undefined } })} placeholder="最多数量" className={FIELD_CLASS} />
-                  </div>
-                )}
               </div>
-            </div>
+            )}
           </div>
         );
       })}

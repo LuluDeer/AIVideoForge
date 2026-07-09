@@ -1,14 +1,12 @@
 import type { ApiFormatType, RuntimePlatform, VideoGenerationRequest } from '../../types';
 import { getFirstImage, getImageList, isEnabled, isPresent } from './utils';
 
-const MEDIA_PARAM_TYPES = new Set(['image', 'image-multi', 'video', 'video-multi', 'audio', 'audio-multi']);
-
 const buildApiKeyMap = (platform: RuntimePlatform, modelId: string): Map<string, string> => {
   const model = platform.models.find(m => m.id === modelId);
   const keyMap = new Map<string, string>();
   if (model) {
     for (const param of model.params) {
-      if (param.apiKey && !MEDIA_PARAM_TYPES.has(param.type)) keyMap.set(param.key, param.apiKey);
+      if (param.apiKey) keyMap.set(param.key, param.apiKey);
     }
   }
   return keyMap;

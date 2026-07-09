@@ -64,7 +64,7 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
   };
 
   return (
-    <div className={`rounded-xl border transition-shadow ${expanded ? 'border-blue-200 shadow-md' : 'border-gray-200'}`}>
+    <div className={`rounded-xl border bg-white transition-shadow ${expanded ? 'border-blue-200 shadow-md' : 'border-gray-200'}`}>
       <div className="flex items-center gap-3 px-4 py-3 bg-white cursor-pointer hover:bg-gray-50" onClick={() => setExpanded(v => !v)}>
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${userConfig.disabled ? 'bg-red-400 shadow-[0_0_0_4px_rgba(239,68,68,0.12)]' : 'bg-green-400 shadow-[0_0_0_4px_rgba(34,197,94,0.12)]'}`} title={userConfig.disabled ? '平台已停用' : '平台已启用'} />
         <div className="flex-1 min-w-0">
@@ -83,7 +83,7 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
       {expanded && (
         <div className="border-t border-gray-100">
           <div className="flex flex-wrap gap-1 bg-gray-50 border-b border-gray-100 px-2 pt-2">
-            {([['basic', 'API Key', Key], ['models', '模型管理', Layers], ['params', '参数设置', Settings2]] as const).map(([targetTab, label, Icon]) => (
+            {([['basic', '基础配置', Key], ['models', '模型管理', Layers], ['params', '参数设置', Settings2]] as const).map(([targetTab, label, Icon]) => (
               <button key={targetTab} type="button" onClick={() => setTab(targetTab)} className={`inline-flex min-h-10 items-center gap-1.5 rounded-t-lg border border-b-0 px-4 py-2 text-sm font-medium leading-normal transition-colors ${tab === targetTab ? 'border-blue-200 bg-white text-blue-700' : 'border-transparent text-gray-500 hover:bg-white hover:text-gray-700'}`}>
                 <Icon className="w-4 h-4" />{label}
               </button>
@@ -118,21 +118,21 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs leading-normal text-gray-500">创建任务路径</label>
+                    <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">创建任务路径</label>
                     <input type="text" value={endpoints.createVideo} onChange={e => updateEndpoints({ createVideo: e.target.value })} placeholder={def.defaultEndpoints.createVideo} className={INPUT_CLASS} />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs leading-normal text-gray-500">查询任务路径</label>
+                    <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">查询任务路径</label>
                     <input type="text" value={endpoints.queryTask} onChange={e => updateEndpoints({ queryTask: e.target.value })} placeholder={def.defaultEndpoints.queryTask} className={INPUT_CLASS} />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs leading-normal text-gray-500">任务列表路径（可选）</label>
+                    <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">任务列表路径（可选）</label>
                     <input type="text" value={endpoints.queryTaskList ?? ''} onChange={e => updateEndpoints({ queryTaskList: e.target.value || undefined })} placeholder={def.defaultEndpoints.queryTaskList ?? '/v1/videos'} className={INPUT_CLASS} />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs leading-normal text-gray-500">取消/删除路径（可选）</label>
+                    <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">取消/删除路径（可选）</label>
                     <input type="text" value={endpoints.deleteTask ?? ''} onChange={e => updateEndpoints({ deleteTask: e.target.value || undefined })} placeholder={def.defaultEndpoints.deleteTask ?? '/v1/videos/{id}'} className={INPUT_CLASS} />
                   </div>
                 </div>
