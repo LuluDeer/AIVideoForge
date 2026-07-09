@@ -267,7 +267,7 @@ ipcMain.handle('select-folder', async () => {
   return { success: false };
 });
 
-ipcMain.handle('download-file', async (_event, fileUrl: string, savePath: string) => {
+ipcMain.handle('download-file', async (_event, fileUrl: string, savePath: string, taskId?: string) => {
   return new Promise((resolve, reject) => {
     if (!savePath) {
       reject(new Error('未设置下载路径'));
@@ -276,7 +276,13 @@ ipcMain.handle('download-file', async (_event, fileUrl: string, savePath: string
 
     fs.mkdirSync(savePath, { recursive: true });
     const urlObj = new URL(fileUrl);
-    const fileName = decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`;
+    const urlFileName = decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`;
+    // 优先使用 taskId 作为文件名，避免中转站默认同名文件互相覆盖
+    let fileName = urlFileName;
+    if (taskId) {
+      const ext = path.extname(urlFileName) || '.mp4';
+      fileName = `${taskId}${ext}`;
+    }
     const filePath = path.join(savePath, fileName);
     
     const req = https.request(fileUrl, (res) => {

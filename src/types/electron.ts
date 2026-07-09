@@ -1,7 +1,7 @@
 export interface ElectronApi {
   selectFolder: () => Promise<{ success?: boolean; path?: string }>;
   setCookies: (ck: string) => Promise<unknown>;
-  downloadFile: (url: string, path: string) => Promise<{ success: boolean; filePath: string; savePath: string }>;
+  downloadFile: (url: string, path: string, taskId?: string) => Promise<{ success: boolean; filePath: string; savePath: string }>;
   openPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>;
   makeRequest: (url: string, options: {
     method?: string;

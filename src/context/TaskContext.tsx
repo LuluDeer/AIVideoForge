@@ -151,7 +151,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       updateTask(task.id, { download_status: 'downloading', download_path: targetPath, download_error: undefined });
-      const result = await window.electronAPI.downloadFile(videoUrl, targetPath);
+      const result = await window.electronAPI.downloadFile(videoUrl, targetPath, task.id);
       updateTask(task.id, {
         downloaded: true,
         download_status: 'downloaded',
