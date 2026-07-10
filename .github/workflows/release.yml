@@ -7,8 +7,27 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            artifact_path: |
+              release/*.exe
+          - os: macos-latest
+            name: macos
+            artifact_path: |
+              release/*.dmg
+              release/*.zip
+          - os: ubuntu-latest
+            name: linux
+            artifact_path: |
+              release/*.AppImage
+              release/*.deb
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       # 1. 检出代码
@@ -26,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 4. 构建 Electron Windows 安装包
-      - name: Build Windows installer
+      # 4. 构建 Electron 安装包（Windows / macOS / Linux）
+      - name: Build installer (${{ matrix.name }})
         run: npm run electron:build
         env:
           # 如果你有 electron-builder 的 code signing 证书可在此配置
@@ -39,8 +58,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: release/*.exe
+          name: ${{ matrix.name }}-installer
+          path: ${{ matrix.artifact_path }}
           retention-days: 7
 
       # 6. 发布到 GitHub Releases
@@ -55,5 +74,8 @@ jobs:
           files: |
             release/*.exe
             release/*.zip
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,7 @@ import {
   addCustomPrompt,
   cleanCustomPrompts,
   getAllCategories,
+  initPromptLibrary,
   loadCustomPrompts,
   normalizePromptItem,
 } from './promptLibrary';
@@ -71,5 +72,94 @@ describe('promptLibrary sanitizers', () => {
     expect(item.category).toBe('自定义');
     expect(item.text).toHaveLength(MAX_PROMPT_TEXT_LENGTH);
     expect(getAllCategories()).toContain('自定义');
+  });
+});
+
+describe('initPromptLibrary migration', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+    vi.spyOn(Math, 'random').mockReturnValue(0.123456);
+    Object.defineProperty(globalThis, 'window', { value: { localStorage: new MemoryStorage() }, configurable: true });
+  });
+
+  it('does nothing when both file and localStorage are empty', async () => {
+    // window.electronAPI is undefined in test env, so readDataFileAsync returns fallback (null)
+    await initPromptLibrary();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('migrates localStorage data to file when file is empty (first migration)', async () => {
+    // Mock electronAPI for this test
+    const writeSpy = vi.fn().mockResolvedValue({ success: true });
+    const readSpy = vi.fn().mockResolvedValue(null); // file does not exist
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: new MemoryStorage(),
+        electronAPI: { readDataFile: readSpy, writeDataFile: writeSpy },
+      },
+      configurable: true,
+    });
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([
+      { id: '1', category: 'A', text: 'hello' },
+      { id: '2', category: 'B', text: 'world' },
+    ]));
+
+    await initPromptLibrary();
+
+    expect(readSpy).toHaveBeenCalled();
+    expect(writeSpy).toHaveBeenCalledWith('prompt_library.json', expect.arrayContaining([
+      expect.objectContaining({ id: '1', text: 'hello' }),
+      expect.objectContaining({ id: '2', text: 'world' }),
+    ]));
+  });
+
+  it('restores from file when localStorage is empty (after upgrade)', async () => {
+    const writeSpy = vi.fn().mockResolvedValue({ success: true });
+    const readSpy = vi.fn().mockResolvedValue([
+      { id: '1', category: 'A', text: 'restored' },
+    ]);
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: new MemoryStorage(),
+        electronAPI: { readDataFile: readSpy, writeDataFile: writeSpy },
+      },
+      configurable: true,
+    });
+
+    // localStorage is empty (simulating upgrade clearing cache)
+    await initPromptLibrary();
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]');
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ id: '1', text: 'restored' });
+  });
+
+  it('merges file and localStorage data with deduplication', async () => {
+    const writeSpy = vi.fn().mockResolvedValue({ success: true });
+    const readSpy = vi.fn().mockResolvedValue([
+      { id: '1', category: 'A', text: 'from_file' },
+      { id: '2', category: 'B', text: 'shared' },
+    ]);
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: new MemoryStorage(),
+        electronAPI: { readDataFile: readSpy, writeDataFile: writeSpy },
+      },
+      configurable: true,
+    });
+
+    // localStorage has 'shared' (duplicate) and 'from_ls' (unique)
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([
+      { id: '3', category: 'B', text: 'shared' },
+      { id: '4', category: 'C', text: 'from_ls' },
+    ]));
+
+    await initPromptLibrary();
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]');
+    expect(stored).toHaveLength(3); // from_file, shared (deduped), from_ls
+    expect(stored.map((p: { text: string }) => p.text).sort()).toEqual(['from_file', 'from_ls', 'shared']);
   });
 });

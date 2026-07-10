@@ -36,6 +36,13 @@ const TasksPage: React.FC = () => {
 
   // 新增：搜索、排序、批量选择、详情弹窗
   const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [modeFilter, setModeFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
+  const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -46,6 +53,14 @@ const TasksPage: React.FC = () => {
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [openingPathIds, setOpeningPathIds] = useState<Set<string>>(new Set());
   const [openPathMessage, setOpenPathMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const focus = () => searchInputRef.current?.focus();
+    const refresh = () => { void handleSyncRemote(); };
+    window.addEventListener('aivideoforge:focus-task-search', focus);
+    window.addEventListener('aivideoforge:refresh-tasks', refresh);
+    return () => { window.removeEventListener('aivideoforge:focus-task-search', focus); window.removeEventListener('aivideoforge:refresh-tasks', refresh); };
+  }, []);
 
   const getTaskPlatform = (task: Task) => task.platformId
     ? (runtimePlatforms.find(p => p.id === task.platformId) ?? activePlatform)
@@ -157,6 +172,12 @@ const TasksPage: React.FC = () => {
       result = result.filter(task => selectedModels.includes(task.model || '未知模型'));
     }
 
+    if (dateFrom) result = result.filter(task => task.created_at >= new Date(`${dateFrom}T00:00:00`).getTime());
+    if (dateTo) result = result.filter(task => task.created_at <= new Date(`${dateTo}T23:59:59.999`).getTime());
+    if (platformFilter !== 'all') result = result.filter(task => (task.platformId || '') === platformFilter);
+    if (modeFilter !== 'all') result = result.filter(task => task.mode === modeFilter);
+    if (tagFilter !== 'all') result = result.filter(task => (task.tags || []).includes(tagFilter));
+
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter(task =>
@@ -178,7 +199,7 @@ const TasksPage: React.FC = () => {
     });
 
     return result;
-  }, [tasks, filter, selectedModels, searchQuery, sortField, sortOrder]);
+  }, [tasks, filter, selectedModels, searchQuery, dateFrom, dateTo, platformFilter, modeFilter, tagFilter, sortField, sortOrder]);
 
   // 模型统计（基于当前状态过滤后的任务）
   const modelStats = useMemo(() => getModelStats(tasks, filter), [tasks, filter]);
@@ -371,11 +392,28 @@ const TasksPage: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
+              ref={searchInputRef}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="搜索 Prompt、任务 ID 或模型名称..."
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-300"
             />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500">
+            <label className="flex items-center gap-1">从 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700" /></label>
+            <label className="flex items-center gap-1">至 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700" /></label>
+            <select value={platformFilter} onChange={e => setPlatformFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
+              <option value="all">全部平台</option>
+              {runtimePlatforms.map(platform => <option key={platform.id} value={platform.id}>{platform.name}</option>)}
+            </select>
+            <select value={modeFilter} onChange={e => setModeFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
+              <option value="all">全部模式</option>
+              {(['text', 'image', 'imageTail', 'multiImage', 'multiModal'] as Task['mode'][]).map(mode => <option key={mode} value={mode}>{getModeText(mode)}</option>)}
+            </select>
+            <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
+              <option value="all">全部标签</option>
+              {Array.from(new Set(tasks.flatMap(task => task.tags ?? []))).sort().map(tag => <option key={tag} value={tag}>{tag}</option>)}
+            </select>
           </div>
           <button
             onClick={() => toggleSort('created_at')}
@@ -458,7 +496,7 @@ const TasksPage: React.FC = () => {
 
         {/* 任务列表 */}
         {filteredTasks.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+          <div className="task-empty-card bg-white rounded-xl shadow-md p-12 text-center">
             <div className="text-gray-400">
               <ExternalLink className="w-16 h-16 mx-auto mb-4" />
               <p className="text-lg">{emptyState.title}</p>
@@ -480,7 +518,7 @@ const TasksPage: React.FC = () => {
             {filteredTasks.map(task => (
               <div
                 key={task.id}
-                className={`bg-white rounded-xl shadow-sm p-3 hover:shadow-md transition-shadow border ${
+                className={`task-card bg-white rounded-xl shadow-sm p-3 hover:shadow-md transition-shadow border ${
                   selectedIds.has(task.id) ? 'border-blue-400 bg-blue-50/30' : 'border-transparent'
                 }`}
               >
@@ -491,12 +529,12 @@ const TasksPage: React.FC = () => {
                       <button onClick={() => toggleSelect(task.id)} className="text-gray-400 hover:text-blue-500" title="选择此任务" aria-label={`选择任务 ${task.id}`}>
                         {selectedIds.has(task.id) ? <CheckSquare className="w-4 h-4 text-blue-500" /> : <Square className="w-4 h-4" />}
                       </button>
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusColor(task.status)}`}>
+                      <span className={`task-status-badge inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusColor(task.status)}`}>
                         {isTaskRunning(task.status) && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                         {getTaskStatusText(task.status)}
                       </span>
                       {task.platformId && (
-                        <span className="inline-flex min-h-6 items-center rounded-md border border-indigo-100 bg-indigo-50 px-2 py-1 text-xs leading-normal text-indigo-600 break-all">
+                        <span className="task-platform-badge inline-flex min-h-6 items-center rounded-md border border-indigo-100 bg-indigo-50 px-2 py-1 text-xs leading-normal text-indigo-600 break-all">
                           {getPlatformName(task.platformId)}
                         </span>
                       )}
@@ -512,9 +550,19 @@ const TasksPage: React.FC = () => {
                               ? <CheckCircle2 className="w-3 h-3 mr-1" />
                               : <Clock className="w-3 h-3 mr-1" />;
                         return (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.className}`} title={task.download_error || task.download_path || undefined}>
-                            {icon}
-                            {badge.text}
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`task-download-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.className}`} title={task.download_error || task.download_path || undefined}>
+                              {icon}
+                              {badge.text}
+                              {task.download_status === 'downloading' && typeof task.download_progress === 'number' && (
+                                <span className="ml-1 tabular-nums">{task.download_progress}%</span>
+                              )}
+                            </span>
+                            {task.download_status === 'downloading' && typeof task.download_progress === 'number' && (
+                              <span className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden" role="progressbar" aria-valuenow={task.download_progress} aria-valuemin={0} aria-valuemax={100} aria-label={`任务 ${task.id} 下载进度`}>
+                                <span className="block h-full bg-blue-500 transition-all duration-300" style={{ width: `${task.download_progress}%` }} />
+                              </span>
+                            )}
                           </span>
                         );
                       })()}
@@ -553,9 +601,9 @@ const TasksPage: React.FC = () => {
                       <span>{getModeText(task.mode)}</span>
                     </div>
                     <span className="text-gray-300">|</span>
-                    <div className="flex min-w-0 items-start gap-1 text-xs text-gray-500">
+                    <div className="task-model-summary flex min-w-0 items-start gap-1 rounded-md border px-2 py-1 text-xs text-gray-500">
                       <span className="shrink-0 text-gray-400">模型:</span>
-                      <span className="break-all text-gray-700 font-medium">{task.model}</span>
+                      <span className="task-model-id break-all text-gray-700 font-medium">{task.model}</span>
                     </div>
                   </div>
                 </div>
@@ -566,14 +614,14 @@ const TasksPage: React.FC = () => {
                     onClick={() => setDetailTask(task)}
                     title="点击查看详情"
                   >
-                    <p className="text-sm text-gray-800 leading-relaxed line-clamp-2">{task.prompt || '(无 Prompt)'}</p>
+                    <p className="task-prompt-summary rounded-lg border px-3 py-2 text-sm text-gray-800 leading-relaxed line-clamp-2">{task.prompt || '(无 Prompt)'}</p>
                     {task.enhanced_prompt && (
                       <p className="mt-1 text-xs text-gray-400 line-clamp-1">
                         增强提示词: {task.enhanced_prompt}
                       </p>
                     )}
                     {task.last_poll_error && (
-                      <p className="mt-1 text-xs text-amber-600 line-clamp-1">{formatTaskError(task.last_poll_error, '自动轮询已暂停', '手动刷新或同步云端')}</p>
+                      <p className="task-warning-message mt-1 rounded-md border px-2 py-1 text-xs text-amber-600 line-clamp-1">{formatTaskError(task.last_poll_error, '自动轮询已暂停', '手动刷新或同步云端')}</p>
                     )}
                     {task.error_message && (
                       <p className="mt-1 text-xs text-red-500 line-clamp-1">{formatTaskError(task.error_message)}</p>
@@ -604,14 +652,14 @@ const TasksPage: React.FC = () => {
                       <>
                         <button
                           onClick={() => setDetailTask(task)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors"
+                          className="task-media-action task-media-action--play flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors"
                           title="在详情弹窗中加载并播放视频，避免列表批量加载视频资源"
                         >
                           <Video className="w-3.5 h-3.5" />查看/播放视频
                         </button>
                         <button
                           onClick={() => task.video_url && handleCopyUrl(task.video_url)}
-                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                          className="task-media-action task-media-action--copy p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                           title="复制视频链接"
                         >
                           {copiedUrl === task.video_url ? (
@@ -622,7 +670,7 @@ const TasksPage: React.FC = () => {
                         </button>
                         <button
                           onClick={() => handleDownload(task.video_url, task.id)}
-                          className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          className="task-media-action task-media-action--download p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                           title="下载视频"
                         >
                           <Download className="w-4 h-4" />
@@ -677,6 +725,13 @@ const TasksPage: React.FC = () => {
         )}
       </div>
 
+      {contextMenu && <div className="fixed z-[80] min-w-44 rounded-lg border bg-white p-1 shadow-xl" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseLeave={() => setContextMenu(null)}>
+        {canRetryTask(contextMenu.task) && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { void handleRetryTask(contextMenu.task.id); setContextMenu(null); }}>重试任务</button>}
+        {contextMenu.task.saved_params && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { requestReuseTask(contextMenu.task.id); setContextMenu(null); }}>复用参数</button>}
+        {contextMenu.task.video_url && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { handleDownload(contextMenu.task.video_url, contextMenu.task.id); setContextMenu(null); }}>下载视频</button>}
+        {canDeleteTask(contextMenu.task) && <button className="block w-full rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={() => { removeTask(contextMenu.task.id); setContextMenu(null); }}>删除任务</button>}
+      </div>}
+
       {/* 任务详情弹窗 */}
       {detailTask && (
         <div
@@ -684,7 +739,7 @@ const TasksPage: React.FC = () => {
           onClick={() => setDetailTask(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            className="task-detail-dialog bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
@@ -699,13 +754,13 @@ const TasksPage: React.FC = () => {
             </div>
 
             {/* 弹窗内容 */}
-            <div className="p-4 space-y-4">
+            <div className="task-detail-content p-4 space-y-4">
               {/* 基本信息 */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="task-detail-meta grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <span className="text-gray-500">任务 ID:</span>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="font-mono text-xs text-gray-700 bg-gray-50 px-2 py-1 rounded">{detailTask.id}</span>
+                    <span className="task-detail-value font-mono text-xs text-gray-700 bg-gray-50 px-2 py-1 rounded">{detailTask.id}</span>
                     <button onClick={() => handleCopyId(detailTask.id)} className="text-gray-400 hover:text-blue-500">
                       {copiedId === detailTask.id ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
@@ -714,7 +769,7 @@ const TasksPage: React.FC = () => {
                 <div>
                   <span className="text-gray-500">状态:</span>
                   <div className="mt-1">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusColor(detailTask.status)}`}>
+                    <span className={`task-status-badge inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getTaskStatusColor(detailTask.status)}`}>
                       {isTaskRunning(detailTask.status) && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                       {getTaskStatusText(detailTask.status)}
                     </span>
@@ -722,29 +777,29 @@ const TasksPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-gray-500">模型:</span>
-                  <div className="text-gray-700 font-medium mt-1">{detailTask.model}</div>
+                  <div className="task-detail-value mt-1 rounded-lg border px-2 py-1 text-gray-700 font-medium break-all">{detailTask.model}</div>
                 </div>
                 <div>
                   <span className="text-gray-500">生成模式:</span>
-                  <div className="flex items-center gap-1.5 text-gray-700 mt-1">
+                  <div className="task-detail-plain-value flex items-center gap-1.5 text-gray-700 mt-1">
                     <ModeIcon mode={detailTask.mode} />
                     {getModeText(detailTask.mode)}
                   </div>
                 </div>
                 <div>
                   <span className="text-gray-500">创建时间:</span>
-                  <div className="text-gray-700 mt-1">{formatTaskDate(detailTask.created_at)}</div>
+                  <div className="task-detail-plain-value text-gray-700 mt-1">{formatTaskDate(detailTask.created_at)}</div>
                 </div>
                 <div>
                   <span className="text-gray-500">更新时间:</span>
-                  <div className="text-gray-700 mt-1">{formatTaskDate(detailTask.updated_at)}</div>
+                  <div className="task-detail-plain-value text-gray-700 mt-1">{formatTaskDate(detailTask.updated_at)}</div>
                 </div>
               </div>
 
               {detailTask.auto_download && (() => {
                 const badge = getAutoDownloadBadge(detailTask);
                 return (
-                  <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-3 text-sm">
+                  <div className="task-detail-section rounded-lg border border-sky-100 bg-sky-50/60 p-3 text-sm">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-gray-600">自动下载</span>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.className}`}>{badge.text}</span>
@@ -772,14 +827,14 @@ const TasksPage: React.FC = () => {
               {/* Prompt */}
               <div>
                 <span className="text-sm text-gray-500">Prompt</span>
-                <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">{detailTask.prompt || '(空)'}</div>
+                <div className="task-detail-value mt-1 p-3 bg-gray-50 rounded-lg border text-sm text-gray-800 whitespace-pre-wrap">{detailTask.prompt || '(空)'}</div>
               </div>
 
               {/* 增强提示词 */}
               {detailTask.enhanced_prompt && (
                 <div>
                   <span className="text-sm text-gray-500">增强提示词</span>
-                  <div className="mt-1 p-3 bg-purple-50 rounded-lg text-sm text-purple-800 whitespace-pre-wrap">{detailTask.enhanced_prompt}</div>
+                  <div className="task-detail-value task-detail-value--accent mt-1 p-3 bg-purple-50 rounded-lg border text-sm text-purple-800 whitespace-pre-wrap">{detailTask.enhanced_prompt}</div>
                 </div>
               )}
 
@@ -787,7 +842,7 @@ const TasksPage: React.FC = () => {
               {detailTask.last_poll_error && (
                 <div>
                   <span className="text-sm text-amber-600">轮询提示</span>
-                  <div className="mt-1 p-3 bg-amber-50 rounded-lg text-sm text-amber-700 whitespace-pre-wrap">{formatTaskError(detailTask.last_poll_error, '自动轮询已暂停', '手动刷新或同步云端')}</div>
+                  <div className="task-warning-message mt-1 rounded-lg border p-3 text-sm text-amber-700 whitespace-pre-wrap">{formatTaskError(detailTask.last_poll_error, '自动轮询已暂停', '手动刷新或同步云端')}</div>
                 </div>
               )}
 
@@ -795,7 +850,7 @@ const TasksPage: React.FC = () => {
               {detailTask.error_message && (
                 <div>
                   <span className="text-sm text-red-500">错误信息</span>
-                  <div className="mt-1 p-3 bg-red-50 rounded-lg text-sm text-red-700 whitespace-pre-wrap">{formatTaskError(detailTask.error_message)}</div>
+                  <div className="task-error-message mt-1 rounded-lg border p-3 text-sm text-red-700 whitespace-pre-wrap">{formatTaskError(detailTask.error_message)}</div>
                 </div>
               )}
 
@@ -808,7 +863,7 @@ const TasksPage: React.FC = () => {
                   </span>
                   <div className="mt-2 space-y-2">
                     {detailTask.retry_history.map((h, i) => (
-                      <div key={i} className="p-2.5 bg-gray-50 rounded-lg text-xs border border-gray-100">
+                      <div key={i} className="task-detail-section p-2.5 bg-gray-50 rounded-lg text-xs border border-gray-100">
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-medium text-gray-700">第 {i + 1} 次重试</span>
                           <span className="text-gray-400">{formatTaskDate(h.time)}</span>
@@ -880,7 +935,7 @@ const TasksPage: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                <div className="task-detail-section rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
                   {getTaskVideoResultHint(detailTask)}
                 </div>
               )}

@@ -246,7 +246,9 @@ class ImageUploader {
           try {
             const ct = xhr.getResponseHeader('Content-Type');
             if (ct) responseHeaders['content-type'] = ct;
-          } catch {}
+          } catch {
+            // 某些运行环境不允许读取响应头，响应主体仍可正常处理。
+          }
           resolve({
             status: xhr.status,
             body: xhr.responseText,

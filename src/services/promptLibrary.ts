@@ -1,11 +1,12 @@
 /**
  * 提示词库管理服务
  * - 内置默认提示词作为基础库
- * - 用户自定义提示词通过 localStorage 持久化
+ * - 用户自定义提示词通过 localStorage（运行时缓存）+ 文件系统（持久化）双写
+ * - 启动时从文件恢复数据，确保升级后不丢失
  * - 提供合并查询、增删改接口
  */
 
-import { readJsonStorage, writeJsonStorage } from '../utils/storage';
+import { readJsonStorage, writeJsonStorage, readDataFileAsync, writeDataFileAsync } from '../utils/storage';
 import { logger } from '../utils/logger';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -19,6 +20,7 @@ export interface PromptItem {
 }
 
 const STORAGE_KEY = 'geekai_prompt_library';
+const DATA_FILENAME = 'prompt_library.json';
 export const MAX_CUSTOM_PROMPTS = 200;
 export const MAX_PROMPT_TEXT_LENGTH = 2000;
 export const MAX_PROMPT_CATEGORY_LENGTH = 80;
@@ -45,10 +47,17 @@ const BUILTIN_PROMPTS: PromptItem[] = [
 /** 生成简单唯一 ID */
 const genId = (): string => `u${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-/** 保存用户自定义提示词 */
+/**
+ * 保存用户自定义提示词到 localStorage（同步缓存）
+ * 同时异步写入文件系统作为持久化备份
+ */
 const saveCustomPrompts = (items: PromptItem[]): void => {
   writeJsonStorage(STORAGE_KEY, items, error => {
-    logger.warn('promptLibrary', '保存 Prompt 库失败', error);
+    logger.warn('promptLibrary', '保存 Prompt 库到 localStorage 失败', error);
+  });
+  // 异步写入文件，fire-and-forget
+  writeDataFileAsync(DATA_FILENAME, items).then(ok => {
+    if (!ok) logger.warn('promptLibrary', '保存 Prompt 库到文件失败');
   });
 };
 
@@ -82,6 +91,53 @@ export const loadCustomPrompts = (): PromptItem[] => {
   const cleaned = cleanCustomPrompts(raw);
   if (cleaned.length !== raw.length) saveCustomPrompts(cleaned);
   return cleaned;
+};
+
+/**
+ * 应用启动时调用：从文件系统恢复词库到 localStorage。
+ * - 如果文件中有数据但 localStorage 为空（如升级安装后 Chromium 缓存丢失），从文件恢复
+ * - 如果两边都有数据，取并集去重
+ * - 如果文件不存在但 localStorage 有数据，将 localStorage 数据写入文件（首次迁移）
+ */
+export const initPromptLibrary = async (): Promise<void> => {
+  try {
+    const fileData = await readDataFileAsync<unknown[] | null>(DATA_FILENAME, null);
+    const lsRaw = readJsonStorage<unknown[]>(STORAGE_KEY, [], Array.isArray);
+
+    if (fileData && Array.isArray(fileData) && fileData.length > 0) {
+      // 文件有数据
+      const fileCleaned = cleanCustomPrompts(fileData);
+      const lsCleaned = cleanCustomPrompts(lsRaw);
+
+      // 合并去重
+      const merged = [...fileCleaned];
+      const seen = new Set(fileCleaned.map(p => `${p.category}\n${p.text}`));
+      for (const item of lsCleaned) {
+        const key = `${item.category}\n${item.text}`;
+        if (!seen.has(key)) {
+          merged.push(item);
+          seen.add(key);
+        }
+      }
+
+      if (merged.length !== lsCleaned.length) {
+        // localStorage 需要更新（恢复或合并了数据）
+        writeJsonStorage(STORAGE_KEY, merged, error => {
+          logger.warn('promptLibrary', '恢复词库到 localStorage 失败', error);
+        });
+      }
+      if (merged.length !== fileCleaned.length) {
+        // 文件也需要更新（合并了 localStorage 独有的数据）
+        await writeDataFileAsync(DATA_FILENAME, merged);
+      }
+    } else if (lsRaw.length > 0) {
+      // 文件不存在但 localStorage 有数据：首次迁移
+      const lsCleaned = cleanCustomPrompts(lsRaw);
+      await writeDataFileAsync(DATA_FILENAME, lsCleaned);
+    }
+  } catch (error) {
+    logger.warn('promptLibrary', '词库迁移/恢复失败', error);
+  }
 };
 
 /** 获取全部提示词（内置 + 自定义） */

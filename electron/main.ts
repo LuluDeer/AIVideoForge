@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, session, ipcMain, dialog, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, session, ipcMain, dialog, screen, shell, safeStorage, net } from 'electron';
 import * as path from 'path';
 import * as url from 'url';
 import * as https from 'https';
@@ -70,14 +70,27 @@ const createWindow = () => {
     title: 'AIVideoForge - AI 视频工坊',
   });
 
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+  const platformRequestFilter = {
+    urls: [
+      'https://geekai.co/*',
+      'https://*.geekai.co/*',
+      'https://apizzz.com/*',
+      'https://*.apizzz.com/*',
+      'https://api.klingai.com/*',
+      'https://ark.cn-beijing.volces.com/*',
+    ],
+  };
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(platformRequestFilter, (details, callback) => {
     const headers = { ...details.requestHeaders };
-    headers['Origin'] = 'https://geekai.co';
-    headers['Referer'] = 'https://geekai.co/chat';
+    if (details.url.startsWith('https://geekai.co') || details.url.includes('.geekai.co')) {
+      headers['Origin'] = 'https://geekai.co';
+      headers['Referer'] = 'https://geekai.co/chat';
+    }
     callback({ cancel: false, requestHeaders: headers });
   });
 
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  session.defaultSession.webRequest.onHeadersReceived(platformRequestFilter, (details, callback) => {
     callback({
       cancel: false,
       responseHeaders: {
@@ -91,7 +104,7 @@ const createWindow = () => {
 
   mainWindow.webContents.on('did-finish-load', async () => {
     const configStr = await session.defaultSession.cookies.get({ url: 'https://geekai.co' });
-    console.log('Current cookies:', configStr);
+    console.log('Cookies loaded:', configStr.length);
   });
 
   if (process.env.NODE_ENV === 'development') {
@@ -267,15 +280,27 @@ ipcMain.handle('select-folder', async () => {
   return { success: false };
 });
 
-ipcMain.handle('download-file', async (_event, fileUrl: string, savePath: string, taskId?: string) => {
+ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string, taskId?: string) => {
   return new Promise((resolve, reject) => {
     if (!savePath) {
       reject(new Error('未设置下载路径'));
       return;
     }
 
+    // 安全校验：仅允许 HTTPS 下载，防止 file:// 或 HTTP 协议
+    let urlObj: URL;
+    try {
+      urlObj = new URL(fileUrl);
+      if (urlObj.protocol !== 'https:') {
+        reject(new Error('仅允许下载 HTTPS 资源'));
+        return;
+      }
+    } catch {
+      reject(new Error('下载 URL 无效'));
+      return;
+    }
+
     fs.mkdirSync(savePath, { recursive: true });
-    const urlObj = new URL(fileUrl);
     const urlFileName = decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`;
     // 优先使用 taskId 作为文件名，避免中转站默认同名文件互相覆盖
     let fileName = urlFileName;
@@ -284,14 +309,32 @@ ipcMain.handle('download-file', async (_event, fileUrl: string, savePath: string
       fileName = `${taskId}${ext}`;
     }
     const filePath = path.join(savePath, fileName);
-    
+
+    const sendProgress = (progress: number, receivedBytes: number, totalBytes: number) => {
+      if (taskId) {
+        event.sender.send('download-progress', { taskId, progress, receivedBytes, totalBytes });
+      }
+    };
+
     const req = https.request(fileUrl, (res) => {
       if (res.statusCode === 200) {
+        const totalBytes = Number(res.headers['content-length'] || 0);
+        let receivedBytes = 0;
         const fileStream = fs.createWriteStream(filePath);
+
+        res.on('data', (chunk: Buffer) => {
+          receivedBytes += chunk.length;
+          if (totalBytes > 0) {
+            const progress = Math.min(99, Math.floor((receivedBytes / totalBytes) * 100));
+            sendProgress(progress, receivedBytes, totalBytes);
+          }
+        });
+
         res.pipe(fileStream);
         fileStream.on('finish', () => {
           fileStream.close();
           console.log(`File downloaded to: ${filePath}`);
+          sendProgress(100, receivedBytes, totalBytes);
           resolve({ success: true, filePath, savePath });
         });
         fileStream.on('error', reject);
@@ -332,6 +375,111 @@ ipcMain.handle('open-path', async (_event, targetPath: string) => {
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
+});
+
+ipcMain.handle('read-data-file', async (_event, filename: string) => {
+  try {
+    if (!filename || filename.includes('..')) throw new Error('文件名无效');
+    const filePath = path.join(app.getPath('userData'), filename);
+    if (!fs.existsSync(filePath)) return null;
+    const data = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error(`Failed to read data file ${filename}:`, error);
+    return null;
+  }
+});
+
+ipcMain.handle('write-data-file', async (_event, filename: string, data: unknown) => {
+  try {
+    if (!filename || filename.includes('..')) throw new Error('文件名无效');
+    const userDataPath = app.getPath('userData');
+    const filePath = path.join(userDataPath, filename);
+    const tempPath = filePath + '.tmp';
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+    return { success: true };
+  } catch (error) {
+    console.error(`Failed to write data file ${filename}:`, error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('encrypt-string', async (_event, plainText: string) => {
+  try {
+    if (typeof plainText !== 'string') throw new Error('待加密内容无效');
+    const available = safeStorage.isEncryptionAvailable();
+    if (!plainText) return { success: true, encrypted: '', available };
+    if (!available) return { success: false, available, error: '当前系统不支持加密存储' };
+    const encryptedBuffer = safeStorage.encryptString(plainText);
+    return { success: true, encrypted: encryptedBuffer.toString('base64'), available };
+  } catch (error) {
+    console.error('Failed to encrypt string:', error);
+    return { success: false, error: String(error), available: safeStorage.isEncryptionAvailable() };
+  }
+});
+
+ipcMain.handle('decrypt-string', async (_event, encryptedBase64: string) => {
+  try {
+    if (typeof encryptedBase64 !== 'string') throw new Error('待解密内容无效');
+    if (!encryptedBase64) return { success: true, decrypted: '' };
+    if (!safeStorage.isEncryptionAvailable()) return { success: false, error: '当前系统不支持加密存储' };
+    const buffer = Buffer.from(encryptedBase64, 'base64');
+    const decrypted = safeStorage.decryptString(buffer);
+    return { success: true, decrypted };
+  } catch (error) {
+    console.error('Failed to decrypt string:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+const updateSource = process.env.AIVIDEOFORGE_UPDATE_URL || 'https://api.github.com/repos/LuluDeer/AIVideoForge/releases/latest';
+const updateDownloadPage = 'https://github.com/LuluDeer/AIVideoForge/releases/latest';
+
+ipcMain.handle('check-for-updates', async () => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IPC_TIMEOUT_MS);
+
+  try {
+    const source = new URL(updateSource);
+    if (source.protocol !== 'https:') throw new Error('更新源必须使用 HTTPS');
+
+    // Electron's network stack follows the operating-system/Electron session
+    // proxy configuration. Node.js fetch bypasses the Windows system proxy.
+    const response = await net.fetch(source.toString(), {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AIVideoForge' },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`更新服务返回 HTTP ${response.status}`);
+
+    const release = await response.json() as { tag_name?: string; html_url?: string; published_at?: string };
+    return {
+      version: release.tag_name || '',
+      url: release.html_url || updateDownloadPage,
+      publishedAt: release.published_at,
+    };
+  } catch (error) {
+    const cause = error instanceof Error && isRecord(error.cause) ? error.cause : undefined;
+    const code = cause && typeof cause.code === 'string' ? cause.code : '';
+    const errorMessage = error instanceof Error ? error.message : '';
+    let message = '暂时无法连接更新服务，请检查网络后重试。';
+
+    if (controller.signal.aborted) message = '连接更新服务超时，请检查网络后重试。';
+    else if (code === 'ECONNREFUSED') message = '更新服务连接被拒绝，请检查系统代理、DNS 或 hosts 设置后重试。';
+    else if (errorMessage === '更新源必须使用 HTTPS') message = errorMessage;
+    else if (errorMessage.startsWith('更新服务返回 HTTP')) message = errorMessage;
+
+    return { version: '', url: updateDownloadPage, error: message };
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
+ipcMain.handle('open-update-download', async (_event, targetUrl: string) => {
+  const parsed = new URL(targetUrl);
+  if (parsed.protocol !== 'https:') throw new Error('下载页必须使用 HTTPS');
+  await shell.openExternal(parsed.toString());
+  return { success: true };
 });
 
 app.whenReady().then(() => {

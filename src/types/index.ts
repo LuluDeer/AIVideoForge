@@ -91,6 +91,10 @@ export interface UserPlatformConfig {
   extraModels?: CustomModelDef[];
   /** 用户指定的默认模型覆盖 */
   defaultModel?: string;
+  /** 多账号管理：同一平台下保存的多套 API Key */
+  accounts?: Array<{ id: string; label: string; apiKey: string }>;
+  /** 当前激活的账号 id（对应 accounts 中的某一项） */
+  activeAccountId?: string;
 }
 
 // ─── 应用配置（localStorage 侧，只存用户数据）────────────────
@@ -215,6 +219,9 @@ export interface TaskQueryResponse {
 
 // ─── 任务（TaskContext）──────────────────────────────────────
 export interface Task {
+  /** Optional metadata; absent on legacy tasks. */
+  tags?: string[];
+  group?: string;
   id: string;
   platformId?: string;
   prompt: string;
@@ -241,6 +248,8 @@ export interface Task {
   poll_error_count?: number;
   /** 连续轮询失败过多时暂停自动轮询，保留手动刷新能力 */
   poll_paused?: boolean;
+  /** 轮询暂停发生时刻（Unix ms），用于计算自动恢复尝试时机 */
+  poll_paused_at?: number;
   /** 最近一次轮询错误信息 */
   last_poll_error?: string;
   /** 取消来源：云端删除成功或仅本地标记 */
@@ -255,6 +264,14 @@ export interface Task {
   download_file_path?: string;
   downloaded_at?: number;
   download_error?: string;
+  /** 自动下载进度百分比（0-100），仅下载中有效 */
+  download_progress?: number;
+  download_received_bytes?: number;
+  download_total_bytes?: number;
+  /** 下载失败自动重试已尝试次数（指数退避，最多 MAX_DOWNLOAD_RETRY_COUNT 次） */
+  download_retry_count?: number;
+  /** 下一次自动重试下载的预定时刻（Unix ms），未定义表示不再自动重试 */
+  download_retry_at?: number;
   /** 提交时保存的完整参数快照（用于复用参数） */
   saved_params?: Record<string, unknown>;
   /** 重试次数 */

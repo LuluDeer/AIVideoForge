@@ -101,11 +101,12 @@ describe('taskUtils presentation helpers', () => {
   it('pauses polling timeout without marking active tasks as failed', () => {
     const runningTask = { ...baseTask, status: 'running' as const, poll_error_count: 2 };
     const patch = createPollTimeoutPausePatch(runningTask);
-    expect(patch).toEqual({
+    expect(patch).toMatchObject({
       poll_error_count: 2,
       poll_paused: true,
       last_poll_error: POLL_TIMEOUT_PAUSED_MESSAGE,
     });
+    expect(typeof patch.poll_paused_at).toBe('number');
     expect(patch).not.toHaveProperty('status');
     expect(patch).not.toHaveProperty('error_message');
     expect({ ...runningTask, ...patch }).toMatchObject({ status: 'running', poll_paused: true });

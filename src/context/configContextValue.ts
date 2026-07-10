@@ -17,6 +17,9 @@ export interface ConfigContextType {
   addCustomPlatform: (def: CustomPlatformDef) => void;
   updateCustomPlatform: (id: string, updates: Partial<CustomPlatformDef>) => void;
   removeCustomPlatform: (id: string) => void;
+  addPlatformAccount: (platformId: string, label: string, apiKey: string) => void;
+  removePlatformAccount: (platformId: string, accountId: string) => void;
+  setActivePlatformAccount: (platformId: string, accountId: string) => void;
 }
 
 export const ConfigContext = createContext<ConfigContextType | undefined>(undefined);

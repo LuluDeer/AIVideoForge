@@ -50,3 +50,33 @@ export function removeStorageKey(key: string, onError?: StorageErrorHandler): bo
     return false;
   }
 }
+
+/**
+ * 通过 Electron IPC 读取 userData 目录下的 JSON 文件。
+ * 在非 Electron 环境（如测试）中返回 fallback。
+ */
+export async function readDataFileAsync<T>(filename: string, fallback: T): Promise<T> {
+  try {
+    const api = window.electronAPI;
+    if (!api?.readDataFile) return fallback;
+    const data = await api.readDataFile(filename);
+    return (data ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * 通过 Electron IPC 将数据写入 userData 目录下的 JSON 文件（原子写入）。
+ * 在非 Electron 环境（如测试）中静默失败。
+ */
+export async function writeDataFileAsync(filename: string, data: unknown): Promise<boolean> {
+  try {
+    const api = window.electronAPI;
+    if (!api?.writeDataFile) return false;
+    const result = await api.writeDataFile(filename, data);
+    return result?.success === true;
+  } catch {
+    return false;
+  }
+}

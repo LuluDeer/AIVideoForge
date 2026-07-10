@@ -1,7 +1,7 @@
 {
   "name": "ai-video-forge",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.1.0",
   "main": "electron/main.ts",
   "type": "module",
   "description": "AIVideoForge - 多平台 AI 视频批量生成桌面工作台",
@@ -36,6 +36,22 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "public-build/app-icon.png",
+      "category": "public.app-category.video"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "public-build/app-icon.png",
+      "category": "Video"
     }
   },
   "dependencies": {

@@ -5,6 +5,7 @@ import { PLATFORM_DEFS, buildDefaultParams } from '../services/modelTemplates';
 import { readJsonStorage, writeJsonStorage } from '../utils/storage';
 import { logger } from '../utils/logger';
 import { DEFAULT_APP_CONFIG, migrateLegacyConfig, normalizeAppConfig } from '../services/configSchema';
+import { encryptAppConfigForStorage } from '../utils/secureStorage';
 import { ConfigContext } from './configContextValue';
 import type { ConfigContextType } from './configContextValue';
 
@@ -162,6 +163,53 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setSaveSuccess(false);
   }, []);
 
+  const addPlatformAccount = useCallback((platformId: string, label: string, apiKey: string) => {
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      const accountId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const newAccount = { id: accountId, label, apiKey };
+      const accounts = [...(existing?.accounts ?? []), newAccount];
+      const updated = existing
+        ? { ...existing, accounts }
+        : { platformId, apiKey: '', accounts };
+      const platforms = existing ? prev.platforms.map(p => p.platformId === platformId ? updated : p) : [...prev.platforms, updated];
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
+    setSaveSuccess(false);
+  }, []);
+
+  const removePlatformAccount = useCallback((platformId: string, accountId: string) => {
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      if (!existing?.accounts) return prev;
+      const accounts = existing.accounts.filter(a => a.id !== accountId);
+      let activeAccountId = existing.activeAccountId;
+      let apiKey = existing.apiKey;
+      if (existing.activeAccountId === accountId) {
+        const next = accounts[0];
+        activeAccountId = next?.id;
+        apiKey = next?.apiKey ?? apiKey;
+      }
+      const updated = { ...existing, accounts, activeAccountId, apiKey };
+      const platforms = prev.platforms.map(p => p.platformId === platformId ? updated : p);
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
+    setSaveSuccess(false);
+  }, []);
+
+  const setActivePlatformAccount = useCallback((platformId: string, accountId: string) => {
+    setAppConfig(prev => {
+      const existing = prev.platforms.find(p => p.platformId === platformId);
+      if (!existing?.accounts) return prev;
+      const target = existing.accounts.find(a => a.id === accountId);
+      if (!target) return prev;
+      const updated = { ...existing, activeAccountId: accountId, apiKey: target.apiKey };
+      const platforms = prev.platforms.map(p => p.platformId === platformId ? updated : p);
+      return normalizeAppConfig({ ...prev, platforms }, { current: prev });
+    });
+    setSaveSuccess(false);
+  }, []);
+
   const runtimePlatforms = useMemo(() => {
     const codePlatforms = PLATFORM_DEFS.flatMap(def => {
       const userConfig = appConfig.platforms.find(p => p.platformId === def.id);
@@ -233,8 +281,10 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const saveConfig = useCallback(async (): Promise<void> => {
     try {
       const normalized = normalizeAppConfig(appConfig, { current: DEFAULT_APP_CONFIG });
+      // 落盘前加密敏感字段；setCookies 仍使用明文 uploadCk
+      const encrypted = await encryptAppConfigForStorage(normalized);
       let storageError: unknown;
-      const ok = writeJsonStorage(STORAGE_KEY, normalized, error => { storageError = error; });
+      const ok = writeJsonStorage(STORAGE_KEY, encrypted, error => { storageError = error; });
       if (!ok) throw storageError ?? new Error('localStorage 不可用');
       if (normalized.uploadCk && window.electronAPI) await window.electronAPI.setCookies(normalized.uploadCk);
       setSaveSuccess(true);
@@ -262,7 +312,10 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addCustomPlatform,
     updateCustomPlatform,
     removeCustomPlatform,
-  }), [appConfig, updateAppConfig, saveConfig, saveSuccess, activePlatform, setActivePlatformId, runtimePlatforms, getUserPlatformConfig, updateUserPlatformConfig, updateParamOverride, resetParamOverride, getParamOverride, addCustomPlatform, updateCustomPlatform, removeCustomPlatform]);
+    addPlatformAccount,
+    removePlatformAccount,
+    setActivePlatformAccount,
+  }), [appConfig, updateAppConfig, saveConfig, saveSuccess, activePlatform, setActivePlatformId, runtimePlatforms, getUserPlatformConfig, updateUserPlatformConfig, updateParamOverride, resetParamOverride, getParamOverride, addCustomPlatform, updateCustomPlatform, removeCustomPlatform, addPlatformAccount, removePlatformAccount, setActivePlatformAccount]);
 
   return <ConfigContext.Provider value={contextValue}>{children}</ConfigContext.Provider>;
 };

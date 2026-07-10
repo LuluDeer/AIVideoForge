@@ -1,5 +1,10 @@
 const { ipcRenderer, contextBridge } = require('electron');
 
+contextBridge.exposeInMainWorld('updateAPI', {
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  openDownload: (targetUrl) => ipcRenderer.invoke('open-update-download', targetUrl),
+});
+
 contextBridge.exposeInMainWorld('electronAPI', {
   setCookies: (ck) => ipcRenderer.invoke('set-cookies', ck),
   makeRequest: (url, options) => ipcRenderer.invoke('make-request', url, options),
@@ -7,4 +12,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   downloadFile: (url, savePath, taskId) => ipcRenderer.invoke('download-file', url, savePath, taskId),
   openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
+  readDataFile: (filename) => ipcRenderer.invoke('read-data-file', filename),
+  writeDataFile: (filename, data) => ipcRenderer.invoke('write-data-file', filename, data),
+  encryptString: (plainText) => ipcRenderer.invoke('encrypt-string', plainText),
+  decryptString: (encrypted) => ipcRenderer.invoke('decrypt-string', encrypted),
+  onDownloadProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('download-progress', listener);
+    return () => ipcRenderer.removeListener('download-progress', listener);
+  },
 });

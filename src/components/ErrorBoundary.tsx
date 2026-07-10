@@ -41,8 +41,8 @@ class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-8">
-          <div className="max-w-lg w-full bg-white rounded-xl shadow-lg p-8 text-center">
+        <div className="error-page flex flex-col items-center justify-center min-h-screen bg-gray-50 p-8">
+          <div className="error-page__card max-w-lg w-full bg-white rounded-xl shadow-lg p-8 text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-red-500" />
             </div>
@@ -55,7 +55,7 @@ class ErrorBoundary extends React.Component<Props, State> {
                 <summary className="cursor-pointer text-sm text-gray-600 hover:text-gray-800">
                   查看错误详情
                 </summary>
-                <pre className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-red-600 overflow-auto max-h-48">
+                <pre className="error-page__details mt-2 p-3 bg-gray-50 rounded-lg text-xs text-red-600 overflow-auto max-h-48">
                   {this.state.error.message}
                   {this.state.errorInfo?.componentStack}
                 </pre>

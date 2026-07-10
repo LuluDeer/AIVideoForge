@@ -7,7 +7,7 @@ import React from 'react';
  * 此页面保留占位，避免 App.tsx 路由报错。
  */
 const ModelConfigPage: React.FC = () => (
-  <div className="p-6">
+  <div className="model-config-page page-shell rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
     <h2 className="text-xl font-bold text-gray-800 mb-2">模型参数配置</h2>
     <p className="text-gray-500 text-sm">
       参数配置已整合进代码（modelTemplates.ts）。如需覆盖某个参数的默认值、禁用参数或自定义选项，

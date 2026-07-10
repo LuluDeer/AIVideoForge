@@ -45,8 +45,8 @@ const CustomPlatformCard: React.FC<{
   };
 
   return (
-    <div className={`rounded-xl border bg-white transition-shadow ${expanded ? 'border-blue-200 shadow-md' : 'border-gray-200'}`}>
-      <div className="flex cursor-pointer items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50" onClick={() => setExpanded(v => !v)}>
+    <div className={`config-platform-card rounded-xl border transition-shadow ${expanded ? 'border-blue-200 shadow-md' : 'border-gray-200'}`}>
+      <div className="config-platform-card__header flex cursor-pointer items-center gap-3 px-4 py-3" onClick={() => setExpanded(v => !v)}>
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${platform.disabled ? 'bg-red-400 shadow-[0_0_0_4px_rgba(239,68,68,0.12)]' : 'bg-green-400 shadow-[0_0_0_4px_rgba(34,197,94,0.12)]'}`} title={platform.disabled ? '平台已停用' : '平台已启用'} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold leading-normal text-gray-800 break-words">{platform.name || '自定义平台'}</p>
@@ -72,7 +72,7 @@ const CustomPlatformCard: React.FC<{
               </button>
             ))}
           </div>
-          <div className="p-4 bg-white">
+          <div className="config-platform-card__body p-4 bg-white">
             {tab === 'basic' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

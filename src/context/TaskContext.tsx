@@ -14,11 +14,16 @@ import {
   createTaskStats,
   containsLocalOnlyImageValue,
   formatPollError,
+  getDownloadRetryDelay,
   getTaskVideoUrl,
+  isDownloadRetryEligible,
   isTaskActive,
   isTaskFailed,
+  isTaskPollEligible,
   isTaskSucceeded,
   LOCAL_ONLY_IMAGE_MESSAGE,
+  MAX_CONCURRENT_POLLS,
+  MAX_DOWNLOAD_RETRY_COUNT,
   MAX_POLL_ERROR_COUNT,
   normalizeTaskPatch,
   normalizeTasksForStorage,
@@ -145,12 +150,25 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         downloaded: false,
         download_status: 'failed',
         download_error: !window.electronAPI ? '当前环境不支持自动下载，请在桌面客户端中使用。' : '此任务没有保存自动下载目录快照，请手动下载或重新提交任务。',
+        download_retry_at: undefined,
       });
       return;
     }
 
+    let unsubscribeProgress: (() => void) | undefined;
     try {
-      updateTask(task.id, { download_status: 'downloading', download_path: targetPath, download_error: undefined });
+      updateTask(task.id, { download_status: 'downloading', download_path: targetPath, download_error: undefined, download_retry_at: undefined, download_progress: 0 });
+      if (window.electronAPI.onDownloadProgress) {
+        unsubscribeProgress = window.electronAPI.onDownloadProgress((payload) => {
+          if (payload.taskId === task.id) {
+            updateTask(task.id, {
+              download_progress: payload.progress,
+              download_received_bytes: payload.receivedBytes,
+              download_total_bytes: payload.totalBytes,
+            });
+          }
+        });
+      }
       const result = await window.electronAPI.downloadFile(videoUrl, targetPath, task.id);
       updateTask(task.id, {
         downloaded: true,
@@ -159,15 +177,25 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         download_file_path: result.filePath,
         downloaded_at: Date.now(),
         download_error: undefined,
+        download_retry_count: 0,
+        download_retry_at: undefined,
+        download_progress: 100,
       });
     } catch (error) {
+      const attemptCount = (task.download_retry_count ?? 0) + 1;
+      const willRetry = attemptCount <= MAX_DOWNLOAD_RETRY_COUNT;
       updateTask(task.id, {
         downloaded: false,
         download_status: 'failed',
         download_path: targetPath,
         download_error: getApiSafeMessage(error, '自动下载失败'),
+        download_retry_count: attemptCount,
+        download_retry_at: willRetry ? Date.now() + getDownloadRetryDelay(attemptCount) : undefined,
+        download_progress: undefined,
       });
       throw error;
+    } finally {
+      unsubscribeProgress?.();
     }
   }, [updateTask]);
 
@@ -373,10 +401,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [getTaskPlatform, saveTasksData]);
 
   const pollRunningTasks = useCallback(async () => {
-    const active = tasksRef.current.filter(t => isTaskActive(t.status) && !t.poll_paused);
+    // 暂停的任务在达到 POLL_RECOVERY_INTERVAL 恢复窗口前会被排除；窗口到达后重新纳入轮询，
+    // 若再次连续失败达到上限会重新暂停并刷新暂停时刻，进入下一轮等待。
+    const active = tasksRef.current.filter(t => isTaskActive(t.status) && isTaskPollEligible(t));
     if (active.length === 0) return;
     if (!runtimePlatformsRef.current.some(p => p.apiKey)) return;
-    await Promise.all(active.map(async task => {
+
+    const pollOne = async (task: Task) => {
       if (pollingTaskIds.current.has(task.id)) return;
       const pollCount = task.poll_count ?? 0;
       if (pollCount >= POLL_TIMEOUT) {
@@ -385,12 +416,24 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       pollingTaskIds.current.add(task.id);
       try { await doQueryTask(task); } catch (e) { logger.error('TaskContext', '轮询任务失败', e); } finally { pollingTaskIds.current.delete(task.id); }
-    }));
+    };
+
+    // 使用固定数量的 worker 池串行消费任务队列，将同时在途的轮询请求数限制在 MAX_CONCURRENT_POLLS 以内，
+    // 避免活跃任务数量激增时瞬间产生大量并发 HTTP 请求（请求风暴）。
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < active.length) {
+        const task = active[cursor++];
+        await pollOne(task);
+      }
+    };
+    const workerCount = Math.min(MAX_CONCURRENT_POLLS, active.length);
+    await Promise.all(Array.from({ length: workerCount }, worker));
   }, [doQueryTask, updateTask]);
 
   useEffect(() => {
     const loaded = loadTasks();
-    if (loaded.some(t => isTaskActive(t.status) && !t.poll_paused)) setTimeout(() => pollRunningTasks(), 1000);
+    if (loaded.some(t => isTaskActive(t.status) && isTaskPollEligible(t))) setTimeout(() => pollRunningTasks(), 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,6 +455,23 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     });
   }, [tasks, downloadTaskVideo]);
+
+  const retryFailedDownloads = useCallback(async () => {
+    if (!window.electronAPI) return;
+    const candidates = tasksRef.current.filter(t => isDownloadRetryEligible(t) && t.video_url);
+    for (const task of candidates) {
+      try {
+        await downloadTaskVideo(task, task.video_url!, task.download_path);
+      } catch (e) {
+        logger.error('TaskContext', '下载自动重试失败', e);
+      }
+    }
+  }, [downloadTaskVideo]);
+
+  useEffect(() => {
+    const interval = setInterval(() => retryFailedDownloads(), POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [retryFailedDownloads]);
 
   const runningCount = useMemo(() => createTaskStats(tasks).running, [tasks]);
 

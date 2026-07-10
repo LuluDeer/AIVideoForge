@@ -7,6 +7,7 @@ import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import BuiltinPlatformCard from './config/BuiltinPlatformCard';
 import CustomPlatformCard from './config/CustomPlatformCard';
 import { emptyPlatform } from './config/utils';
+import UpdatePanel from '../components/UpdatePanel';
 
 const ConfigPage: React.FC = () => {
   const {
@@ -183,7 +184,8 @@ const ConfigPage: React.FC = () => {
 
       <section>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">系统设置</h3>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+        <div className="mb-4"><UpdatePanel /></div>
+        <div className="config-settings-panel bg-white border border-gray-200 rounded-xl p-4 space-y-4">
           <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
@@ -247,14 +249,14 @@ const ConfigPage: React.FC = () => {
         </div>
       </section>
       
-      <section className="mb-6">
+      <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">平台与模型</h3>
         <div className="space-y-3">
           {PLATFORM_DEFS.map(def => <BuiltinPlatformCard key={def.id} platformId={def.id} />)}
         </div>
       </section>
 
-      <section className="mb-6">
+      <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-700">自定义平台 / 中转站</h3>
           <button onClick={() => addCustomPlatform(emptyPlatform())} className="new-platform-button flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-orange-500 rounded-lg hover:bg-orange-600">

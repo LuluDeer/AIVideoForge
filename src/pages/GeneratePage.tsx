@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw, Copy } from 'lucide-react';
+import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw, Copy, WifiOff, RefreshCw, Trash2 } from 'lucide-react';
 import AppSelect from '../components/AppSelect';
 import { useConfig } from '../context/useConfig';
 import { useTasks } from '../context/useTasks';
+import { useOfflineQueue } from '../context/useOfflineQueue';
 import type { GenerationMode, VideoGenerationRequest, ParamDef, ParamOption } from '../types';
 import VideoApi from '../services/api';
 import { buildRequestPayload } from '../services/api/payloadBuilders';
@@ -14,6 +15,7 @@ import { addCustomPrompt, deleteCustomPrompt, loadCustomPrompts, updateCustomPro
 import type { PromptItem } from '../services/promptLibrary';
 import { logger } from '../utils/logger';
 import { containsLocalOnlyImageValue, formatErrorWithAdvice, getTaskVideoUrl, normalizeTaskStatus } from '../context/taskUtils';
+import { isNetworkErrorMessage } from '../context/offlineQueueUtils';
 import { validateGenerationInput } from './generate/validation';
 import { MAX_IMAGE_URL_LENGTH, isAssetUrl, normalizeImageUrl, normalizeMediaUrl, validateImageFile, validateMediaFile } from './generate/imageInput';
 
@@ -55,6 +57,15 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
   const { activePlatform, runtimePlatforms, setActivePlatformId, appConfig } = useConfig();
   const activeImageUploadMode = activePlatform?.imageUploadMode ?? appConfig.imageUploadMode ?? 'geekai';
   const { addTask, reuseTaskData, clearReuseTaskData } = useTasks();
+  const {
+    queue: offlineQueue,
+    isOnline,
+    isProcessing: offlineProcessing,
+    enqueueOfflineTask,
+    removeOfflineTask,
+    retryOfflineTask,
+  } = useOfflineQueue();
+  const [offlineActionError, setOfflineActionError] = useState<string>('');
 
   const [mode, setMode] = useState<GenerationMode>('text');
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
@@ -408,6 +419,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     const api = new VideoApi(activePlatform);
     let succeedCount = 0;
     let submittedCount = 0;
+    let queuedCount = 0;
     const lastErrors: string[] = [];
 
     for (const prompt of validPrompts) {
@@ -415,8 +427,8 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         if (stopGenerateRef.current) break;
         submittedCount++;
         setSubmitProgress(`正在提交 ${submittedCount}/${totalSubmitCount}`);
+        const request = { ...buildRequest(), prompt: prompt.trim() };
         try {
-          const request = { ...buildRequest(), prompt: prompt.trim() };
           const response = await api.generateVideo(request);
           // 保存完整参数快照（排除 prompt，单独存）
           const paramsSnapshot: Record<string, unknown> = { ...request };
@@ -445,7 +457,22 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           succeedCount++;
         } catch (err) {
           const msg = getApiSafeMessage(err, '视频生成请求失败');
-          lastErrors.push(formatErrorWithAdvice(msg, '检查参数后重试'));
+          // 网络类异常（断网/连接超时等）不算最终失败，转入离线队列，网络恢复后自动重新提交
+          if (isNetworkErrorMessage(msg)) {
+            enqueueOfflineTask({
+              platformId: activePlatform?.id,
+              model: selectedModelId,
+              mode,
+              prompt: prompt.trim(),
+              request,
+              count: generationCount,
+              autoDownload: appConfig.autoDownload,
+              downloadPath: appConfig.downloadPath,
+            });
+            queuedCount++;
+          } else {
+            lastErrors.push(formatErrorWithAdvice(msg, '检查参数后重试'));
+          }
           logger.error('GeneratePage', '提交任务失败', err);
         }
       }
@@ -453,9 +480,12 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
 
     setIsGenerating(false);
     setSubmitProgress('');
-    if (succeedCount > 0) {
-      setSuccessMessage(stopGenerateRef.current ? `已停止继续提交，已提交 ${succeedCount} 个任务` : `已提交 ${succeedCount} 个任务，请在任务列表查看进度`);
-      setTimeout(() => setSuccessMessage(''), 5000);
+    if (succeedCount > 0 || queuedCount > 0) {
+      const parts: string[] = [];
+      if (succeedCount > 0) parts.push(`成功提交 ${succeedCount} 个`);
+      if (queuedCount > 0) parts.push(`${queuedCount} 个因网络异常已加入离线队列，网络恢复后自动提交`);
+      setSuccessMessage(`${stopGenerateRef.current ? '已停止继续提交。' : ''}${parts.join('，')}`);
+      setTimeout(() => setSuccessMessage(''), queuedCount > 0 ? 8000 : 5000);
     }
     if (lastErrors.length > 0) {
       const failedCount = lastErrors.length;
@@ -1017,12 +1047,62 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         </div>
       )}
 
+      {offlineQueue.length > 0 && (
+        <div className="offline-queue-banner">
+          <div className="offline-queue-banner__header">
+            <WifiOff className="w-4 h-4 shrink-0 text-slate-500" />
+            <span className="flex-1">
+              {isOnline
+                ? `网络已恢复，正在自动提交离线队列中的 ${offlineQueue.length} 个任务${offlineProcessing ? '…' : ''}`
+                : `网络异常，${offlineQueue.length} 个任务已暂存离线队列，网络恢复后将自动提交`}
+            </span>
+            {offlineActionError && <span className="text-red-600 text-xs">{offlineActionError}</span>}
+          </div>
+          <div className="offline-queue-banner__list">
+            {offlineQueue.map(item => (
+              <div key={item.id} className="offline-queue-banner__item">
+                <span className="offline-queue-banner__item-text" title={item.prompt}>
+                  [{item.model}] {item.prompt || '（无 Prompt）'}
+                </span>
+                {item.retryCount > 0 && (
+                  <span className="text-[11px] text-amber-600 shrink-0">已重试 {item.retryCount} 次</span>
+                )}
+                <button
+                  type="button"
+                  className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-blue-600 hover:bg-blue-50"
+                  disabled={offlineProcessing}
+                  onClick={async () => {
+                    setOfflineActionError('');
+                    try {
+                      await retryOfflineTask(item.id);
+                    } catch (err) {
+                      setOfflineActionError(getApiSafeMessage(err, '重试提交失败'));
+                    }
+                  }}
+                  title="立即重试提交"
+                >
+                  <RefreshCw className="w-3 h-3" />重试
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-50"
+                  onClick={() => removeOfflineTask(item.id)}
+                  title="从离线队列移除，不再自动提交"
+                >
+                  <Trash2 className="w-3 h-3" />移除
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-4">
         {/* 左栏：模式 + 参数 + Prompt */}
         <div className="col-span-12 lg:col-span-8 space-y-4">
 
           {/* 生成模式 */}
-          <div className="bg-white rounded-lg shadow-sm p-4">
+          <div className="generate-card bg-white rounded-lg shadow-sm p-4">
             <h3 className="text-base font-semibold text-gray-700 mb-3">生成模式</h3>
             <div className="flex flex-wrap gap-2">
               {MODES.map(m => (
@@ -1031,10 +1111,10 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   onClick={() => handleModeChange(m.value)}
                   title={`切换到${m.label}`}
                   aria-pressed={mode === m.value}
-                  className={`flex min-h-10 items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
+                  className={`generate-option-button flex min-h-10 items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
                     mode === m.value
-                      ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-100'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                      ? 'generate-option-button--selected border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-100'
+                      : 'generate-option-button--idle border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
                   }`}
                 >
                   {m.icon}
@@ -1045,7 +1125,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           </div>
 
           {/* 生成参数 */}
-          <div className={`bg-white rounded-lg shadow-sm p-4 ${isGenerating ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`generate-card bg-white rounded-lg shadow-sm p-4 ${isGenerating ? 'opacity-50 pointer-events-none' : ''}`}>
             <div onClick={() => setShowParams(v => !v)} className="flex items-center justify-between cursor-pointer mb-3 gap-3">
               <div>
                 <h3 className="text-base font-semibold text-gray-700">生成参数</h3>
@@ -1107,7 +1187,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           </div>
 
           {/* Prompt 输入 */}
-          <div ref={promptSectionRef} className="relative overflow-visible bg-white rounded-lg shadow-sm p-4">
+          <div ref={promptSectionRef} className="generate-card relative overflow-visible bg-white rounded-lg shadow-sm p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-gray-700">Prompt</h3>
               <div className="flex flex-wrap gap-2">
@@ -1152,12 +1232,12 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                           setPromptList(next);
                         }}
                         placeholder={index === 0 ? '例如：一只橘猫在雨后街道奔跑，电影感，慢镜头，柔和光线' : `Prompt ${index + 1}：输入另一条独立生成内容`}
-                        className="min-h-[96px] w-full rounded-lg border border-gray-200 px-3 py-2 pr-10 text-sm leading-normal resize-y focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        className="prompt-input min-h-[96px] w-full rounded-lg border border-gray-200 px-3 py-2 pr-10 text-sm leading-normal resize-y focus:outline-none focus:ring-2 focus:ring-blue-100"
                       />
                       <button
                         type="button"
                         onClick={() => handleRemovePromptInput(index)}
-                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-400 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        className="prompt-remove-button absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-400 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                         title="删除该 Prompt 输入框"
                         aria-label={`删除 Prompt ${index + 1} 输入框`}
                       >
@@ -1172,7 +1252,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                           next[index] = '';
                           setPromptList(next);
                         }}
-                        className="inline-flex min-h-[44px] w-full items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-semibold leading-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                        className="prompt-clear-button inline-flex min-h-[44px] w-full items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-semibold leading-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-200"
                         title="清除该 Prompt 输入框"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -1198,7 +1278,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
 
         {/* 右栏：生成控制 */}
         <div ref={generationControlColumnRef} className="generation-control-column col-span-12 lg:col-span-4 space-y-4">
-          <div className="bg-white rounded-lg shadow-sm p-4">
+          <div className="generate-card bg-white rounded-lg shadow-sm p-4">
             <h3 className="text-base font-semibold text-gray-700 mb-3">生成控制</h3>
 
             <div className="mb-4">
@@ -1208,10 +1288,10 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   <button
                     key={n}
                     onClick={() => setGenerationCount(n)}
-                    className={`min-h-10 flex-1 rounded-lg border px-3 py-2 text-sm leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
+                    className={`generate-option-button min-h-10 flex-1 rounded-lg border px-3 py-2 text-sm leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
                       generationCount === n
-                        ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-100'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                        ? 'generate-option-button--selected border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-100'
+                        : 'generate-option-button--idle border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
                     }`}
                   >
                     {n}
@@ -1233,7 +1313,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
               <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">请选择模型后再生成。找不到新模型时，去配置页「模型管理」手动添加模型 ID。</p>
             )}
             {generateBlockerHint && (
-              <div className="mb-3 flex items-start gap-2 border-l-4 border-amber-300 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-700">
+              <div className="generate-warning-message mb-3 flex items-start gap-2 border-l-4 border-amber-300 bg-amber-50/60 px-3 py-2 text-xs leading-5 text-amber-700">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>{generateBlockerHint}</span>
               </div>
@@ -1241,7 +1321,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
             <button
               onClick={isGenerating ? handleStopGenerate : handleGenerate}
               disabled={!isGenerating && !canGenerate}
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold leading-normal text-white shadow-sm transition-colors hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:from-gray-300 disabled:to-gray-400"
+              className="generate-submit-button flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold leading-normal text-white shadow-sm transition-colors hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:from-gray-300 disabled:to-gray-400"
               title={isGenerating ? '停止继续提交新任务，已提交任务仍会保留' : '提交生成任务'}
             >
               {isGenerating ? (
@@ -1266,14 +1346,14 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
               <button
                 type="button"
                 onClick={() => setShowRequestPreview(v => !v)}
-                className="group flex w-full items-center justify-between py-1.5 text-left"
+                className="request-preview-trigger group flex w-full items-center justify-between py-1.5 text-left"
                 aria-expanded={showRequestPreview}
               >
                 <span className="text-xs text-gray-500 group-hover:text-gray-800">请求体参数JSON预览</span>
                 <ChevronDown className={`h-4 w-4 text-gray-300 transition-transform group-hover:text-gray-500 ${showRequestPreview ? 'rotate-180' : ''}`} />
               </button>
               {showRequestPreview && (
-                <pre className="mt-2 max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-[11px] leading-5 text-gray-800">
+                <pre className="request-preview-panel mt-2 max-h-80 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-[11px] leading-5 text-gray-800">
                   <code>{requestPreviewJson}</code>
                 </pre>
               )}
@@ -1303,7 +1383,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   value={promptSearch}
                   onChange={e => setPromptSearch(e.target.value)}
                   placeholder="搜索个人提示词..."
-                  className="w-full min-h-10 rounded-lg border border-purple-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-purple-100"
+                  className="prompt-library-search w-full min-h-10 rounded-lg border border-purple-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-purple-100"
                 />
               </div>
 
