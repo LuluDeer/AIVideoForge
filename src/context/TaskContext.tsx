@@ -433,7 +433,13 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const loaded = loadTasks();
-    if (loaded.some(t => isTaskActive(t.status) && isTaskPollEligible(t))) setTimeout(() => pollRunningTasks(), 1000);
+    let timer: number | undefined;
+    if (loaded.some(t => isTaskActive(t.status) && isTaskPollEligible(t))) {
+      timer = window.setTimeout(() => { void pollRunningTasks(); }, 1000);
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
