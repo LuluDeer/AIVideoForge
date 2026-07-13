@@ -4,11 +4,6 @@ import * as url from 'url';
 import * as https from 'https';
 import * as fs from 'fs';
 
-// 固定历史应用数据目录，兼容 1.0.x 及更早版本。
-// 必须在创建 BrowserWindow、访问 session 或 app.whenReady() 之前设置，
-// 否则 Electron 会按当前 package name 创建另一套空 Profile。
-app.setPath('userData', path.join(app.getPath('appData'), 'video_gen'));
-
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const IPC_TIMEOUT_MS = 30_000;
 const HEAD_TIMEOUT_MS = 5_000;
