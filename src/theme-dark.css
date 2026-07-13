@@ -172,13 +172,76 @@
 [data-theme='dark'] .app-select__button { color: var(--text); background: var(--surface-soft) !important; border-color: var(--border-strong) !important; }
 [data-theme='dark'] .app-select__button:hover,
 [data-theme='dark'] .app-select--open .app-select__button { background: #223552 !important; border-color: var(--primary) !important; }
+
+/* 深色模式：修正原生 select 和 app-select 的 background-image 白底问题 */
+[data-theme='dark'] select,
+[data-theme='dark'] .app-select,
+[data-theme='dark'] .app-select__button {
+  background-image: none !important;
+  background-color: var(--surface-soft) !important;
+}
+[data-theme='dark'] select:hover,
+[data-theme='dark'] .app-select:hover,
+[data-theme='dark'] .app-select__button:hover {
+  background-color: var(--surface-hover) !important;
+}
+[data-theme='dark'] select:focus,
+[data-theme='dark'] .app-select:focus,
+[data-theme='dark'] .app-select__button:focus {
+  background-color: var(--surface-hover) !important;
+  border-color: var(--primary) !important;
+}
+
+/* DateRangePicker 深色模式适配 */
+[data-theme='dark'] .drp-panel {
+  background: var(--surface-solid) !important;
+  border-color: var(--border-strong) !important;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+}
+[data-theme='dark'] .drp-day-num {
+  color: var(--text) !important;
+}
+[data-theme='dark'] .drp-day-range-bg {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+[data-theme='dark'] .drp-day--selected .drp-day-num {
+  color: #fff !important;
+}
+
+/* 统一筛选控件深色样式 */
+[data-theme='dark'] .task-control {
+  background: var(--surface-soft);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+[data-theme='dark'] .task-control:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary);
+}
+[data-theme='dark'] .task-control:focus {
+  background: var(--surface-hover);
+  border-color: var(--primary);
+  box-shadow: var(--focus);
+}
+[data-theme='dark'] .task-control::placeholder {
+  color: var(--text-soft);
+}
+[data-theme='dark'] input[type='date'].task-control {
+  color-scheme: dark;
+}
+[data-theme='dark'] input[type='date'].task-control::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
 [data-theme='dark'] .app-select__value--placeholder,
 [data-theme='dark'] .app-select__empty { color: var(--text-soft); }
 [data-theme='dark'] .app-select__menu { background: var(--surface-solid); border-color: var(--border-strong); box-shadow: var(--shadow-lg); }
-[data-theme='dark'] .app-select__option { color: var(--text-muted); }
-[data-theme='dark'] .app-select__option:hover:not(:disabled) { color: var(--text); background: var(--primary-softer); }
+[data-theme='dark'] .app-select__option { color: var(--text-muted); background: transparent; }
+[data-theme='dark'] .app-select__option:hover:not(:disabled) { color: #ffffff !important; background: rgba(154, 167, 255, 0.4) !important; }
+[data-theme='dark'] .app-select__option:active:not(:disabled) { color: #ffffff !important; background: rgba(154, 167, 255, 0.55) !important; }
 [data-theme='dark'] .app-select__option--selected,
-[data-theme='dark'] .app-select__option--selected:hover:not(:disabled) { color: #10172a; background: linear-gradient(135deg, #aab4ff, #5ee0c4); }
+[data-theme='dark'] .app-select__option--selected,
+[data-theme='dark'] .app-select__option--selected:hover:not(:disabled) { color: #10172a !important; background: linear-gradient(135deg, #aab4ff, #5ee0c4) !important; }
 
 /* Error fallback is outside normal page shells and needs its own themed surface. */
 [data-theme='dark'] .error-page { color: var(--text); background: var(--bg) !important; }
@@ -352,6 +415,21 @@
   border-color: var(--border-strong) !important;
   background: #18263a !important;
 }
+[data-theme='dark'] .generate-page .generate-card .text-gray-700 {
+  color: #f1f5f9 !important;
+}
+[data-theme='dark'] .generate-page .generate-card .text-gray-600 {
+  color: #e2e8f0 !important;
+}
+[data-theme='dark'] .generate-page .generate-card .text-gray-500 {
+  color: #cbd5e1 !important;
+}
+[data-theme='dark'] .generate-page .generate-card .text-gray-400 {
+  color: #94a3b8 !important;
+}
+[data-theme='dark'] .generate-page .generate-card .text-gray-300 {
+  color: #64748b !important;
+}
 [data-theme='dark'] .generate-page .generate-option-button--idle:hover {
   color: #cfe7ff !important;
   border-color: rgba(101, 183, 255, 0.62) !important;
@@ -374,7 +452,16 @@
   color: #ff9bad !important;
   background: rgba(255, 123, 145, 0.18) !important;
 }
-[data-theme='dark'] .generate-page .prompt-clear-button:hover,
+[data-theme='dark'] .generate-page .prompt-clear-button {
+  color: #d7e0ec !important;
+  border-color: var(--border-strong) !important;
+  background: #18263a !important;
+}
+[data-theme='dark'] .generate-page .prompt-clear-button:hover {
+  color: #f1f5f9 !important;
+  border-color: var(--border-strong) !important;
+  background: #1e2f47 !important;
+}
 [data-theme='dark'] .generate-page .request-preview-trigger:hover,
 [data-theme='dark'] .generate-page .request-preview-trigger:hover * { color: #f1f5f9 !important; }
 [data-theme='dark'] .generate-warning-message,
@@ -652,6 +739,41 @@ html[data-theme='dark'] .tasks-page .task-detail-section {
   color: #b9c6d8 !important;
   border-color: var(--border) !important;
   background: #18263a !important;
+}
+html[data-theme='dark'] .tasks-page .task-id-button,
+html[data-theme='dark'] .tasks-page button[class*='bg-gray-50']:hover {
+  color: #9dccff !important;
+  border-color: var(--border-strong) !important;
+  background: #223552 !important;
+}
+html[data-theme='dark'] .tasks-page .task-id-button {
+  color: var(--text-muted) !important;
+  background: var(--surface-soft) !important;
+  border: 1px solid var(--border) !important;
+}
+html[data-theme='dark'] .tasks-page .task-id-button:hover {
+  color: #9dccff !important;
+  background: #223552 !important;
+  border-color: var(--primary) !important;
+}
+html[data-theme='dark'] .tasks-page .task-sort-button {
+  color: var(--text-muted) !important;
+  border-color: var(--border-strong) !important;
+  background: var(--surface-soft) !important;
+}
+html[data-theme='dark'] .tasks-page .task-sort-button:hover {
+  color: var(--text) !important;
+  background: var(--surface-muted) !important;
+}
+html[data-theme='dark'] .tasks-page .context-menu {
+  color: var(--text) !important;
+  border-color: var(--border-strong) !important;
+  background: var(--surface-solid) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+html[data-theme='dark'] .tasks-page .context-menu button:hover {
+  color: #9dccff !important;
+  background: var(--primary-softer) !important;
 }
 
 html[data-theme='dark'] .config-page,

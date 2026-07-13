@@ -54,6 +54,28 @@
   opacity: 0.58;
 }
 
+/* 统一筛选控件基础样式 */
+.task-control {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(116, 133, 166, 0.34);
+  background: var(--control-bg, #fff);
+  color: var(--text, #374151);
+  font-size: 0.875rem;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  outline: none;
+}
+.task-control:hover {
+  border-color: var(--primary, #3b82f6);
+}
+.task-control:focus {
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+.task-control::placeholder {
+  color: #9ca3af;
+}
+
 .app-select__value {
   min-width: 0;
   flex: 1;
@@ -109,7 +131,11 @@
 }
 
 .app-select__option:hover:not(:disabled) {
-  background: #eff6ff;
+  background: rgba(88, 101, 242, 0.14);
+  color: #1d4ed8;
+}
+.app-select__option:active:not(:disabled) {
+  background: rgba(88, 101, 242, 0.2);
   color: #1d4ed8;
 }
 
@@ -117,6 +143,70 @@
 .app-select__option--selected:hover:not(:disabled) {
   color: #fff;
   background: linear-gradient(135deg, var(--primary), #19b7a7);
+}
+
+/* DateRangePicker 组件样式 */
+.drp-trigger {
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.drp-trigger:hover {
+  border-color: var(--text-soft) !important;
+}
+.drp-trigger--open {
+  border-color: var(--primary) !important;
+  box-shadow: var(--focus);
+}
+.drp-panel {
+  animation: drp-fade-in 120ms ease-out;
+}
+@keyframes drp-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.drp-nav-btn {
+  color: var(--text);
+}
+.drp-nav-btn:hover {
+  background: var(--surface-hover);
+}
+.drp-day-cell {
+  color: var(--text);
+}
+.drp-day-cell:hover .drp-day-num {
+  background: var(--surface-hover);
+}
+.drp-day-range-bg {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.drp-day-num {
+  transition: background 100ms ease, color 100ms ease;
+}
+.drp-day--selected .drp-day-num {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.drp-day--selected.drp-day--range-start .drp-day-num {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.drp-day--selected.drp-day--range-end .drp-day-num {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.drp-btn-clear {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.drp-btn-clear:hover {
+  background: var(--surface-hover);
+}
+.drp-btn-confirm {
+  background: var(--primary);
+  color: #fff;
+}
+.drp-btn-confirm:hover {
+  filter: brightness(1.08);
 }
 
 .app-select__option:disabled {

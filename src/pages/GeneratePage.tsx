@@ -963,7 +963,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                 className={`min-h-10 rounded-lg border px-3 py-2 text-sm leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
                   String(current) === String(opt.value)
                     ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-100'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                    : 'generate-option-button--idle border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
                 }`}
               >
                 {opt.label}
@@ -1202,7 +1202,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                 <button
                   type="button"
                   onClick={() => setPromptList(prev => prev.map(() => ''))}
-                  className="flex min-h-9 items-center gap-1 rounded-lg bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                  className="prompt-clear-button flex min-h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
                 >
                   <RotateCcw className="w-4 h-4" />
                   清空

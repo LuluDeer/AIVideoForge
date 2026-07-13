@@ -135,11 +135,11 @@ const CustomModelManager: React.FC<{
         </div>
       )}
 
-      {displayModels.map(model => {
+      {displayModels.map((model, index) => {
         const isOpen = openModelId === model.id;
         const effectiveParams = cloneParams(model.params, model.modes);
         return (
-          <div key={model.id} className="rounded-xl border border-gray-100 bg-gray-50">
+          <div key={index} className="rounded-xl border border-gray-100 bg-gray-50">
             <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
               <button type="button" onClick={() => setOpenModelId(isOpen ? null : model.id)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
                 {isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />}

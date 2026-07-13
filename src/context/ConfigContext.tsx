@@ -147,10 +147,10 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, []);
 
   const updateCustomPlatform = useCallback((id: string, updates: Partial<CustomPlatformDef>) => {
-    setAppConfig(prev => normalizeAppConfig({
+    setAppConfig(prev => ({
       ...prev,
       customPlatforms: (prev.customPlatforms ?? []).map(cp => cp.id === id ? { ...cp, ...updates } : cp),
-    }, { current: prev }));
+    }));
     setSaveSuccess(false);
   }, []);
 

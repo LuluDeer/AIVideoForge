@@ -182,10 +182,10 @@ const ConfigPage: React.FC = () => {
       )}
 
 
-      <section>
+      <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">系统设置</h3>
         <div className="mb-4"><UpdatePanel /></div>
-        <div className="config-settings-panel bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+        <div className="config-settings-panel space-y-4">
           <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
@@ -270,8 +270,8 @@ const ConfigPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {(appConfig.customPlatforms ?? []).map(platform => (
-              <CustomPlatformCard key={platform.id} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
+            {(appConfig.customPlatforms ?? []).map((platform, index) => (
+              <CustomPlatformCard key={index} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
             ))}
           </div>
         )}

@@ -75,10 +75,8 @@ const ParamSchemaEditor: React.FC<{
 }> = ({ params, modelModes, onChange }) => {
   const normalizedParams = params.map(param => normalizeParamForModes(param, modelModes));
   const [openParamIds, setOpenParamIds] = React.useState<Record<string, boolean>>({});
-  const getParamId = (param: ParamDef, index: number) => `${param.key || 'param'}-${index}`;
-  const toggleParamOpen = (param: ParamDef, index: number) => {
-    const id = getParamId(param, index);
-    setOpenParamIds(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleParamOpen = (index: number) => {
+    setOpenParamIds(prev => ({ ...prev, [index]: !prev[index] }));
   };
 
   const updateParam = (index: number, patch: Partial<ParamDef>) => {
@@ -136,12 +134,11 @@ const ParamSchemaEditor: React.FC<{
       {normalizedParams.map((param, index) => {
         const typeIsCommon = COMMON_TYPES.some(item => item.value === param.type);
         const typeSelectValue = typeIsCommon ? param.type : '__custom__';
-        const paramId = getParamId(param, index);
-        const isOpen = openParamIds[paramId] ?? false;
+        const isOpen = openParamIds[index] ?? false;
         return (
-          <div key={`${param.key}-${index}`} className="rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div key={index} className="rounded-xl border border-gray-100 bg-white shadow-sm">
             <div className="flex items-center justify-between gap-3 p-4">
-              <button type="button" onClick={() => toggleParamOpen(param, index)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+              <button type="button" onClick={() => toggleParamOpen(index)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
                 {isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" /> : <ChevronRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-gray-800 break-words">{param.label || param.key || `参数 ${index + 1}`}</p>

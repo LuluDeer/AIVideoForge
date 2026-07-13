@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useTasks } from '../context/useTasks';
 import { useConfig } from '../context/useConfig';
+import AppSelect from '../components/AppSelect';
+import DateRangePicker from '../components/DateRangePicker';
 import { canCancelTask, canDeleteTask, canRetryTask, createTaskStats, getActionableErrorAdvice, formatErrorWithAdvice, getAutoDownloadBadge, getModelStats, getTaskStatusColor, getTaskStatusText, isTaskActive, isTaskRunning, matchesTaskStatusFilter } from '../context/taskUtils';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import { logger } from '../utils/logger';
@@ -386,38 +388,45 @@ const TasksPage: React.FC = () => {
           ))}
         </div>
 
-        {/* 搜索栏 + 批量操作 */}
-        <div className="mb-4 flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        {/* 搜索栏 + 筛选条件 */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
               type="text"
               ref={searchInputRef}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="搜索 Prompt、任务 ID 或模型名称..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-300"
+              className="task-control w-full pl-9 pr-3 h-10 text-sm rounded-lg"
             />
           </div>
-          <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500">
-            <label className="flex items-center gap-1">从 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700" /></label>
-            <label className="flex items-center gap-1">至 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700" /></label>
-            <select value={platformFilter} onChange={e => setPlatformFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
-              <option value="all">全部平台</option>
-              {runtimePlatforms.map(platform => <option key={platform.id} value={platform.id}>{platform.name}</option>)}
-            </select>
-            <select value={modeFilter} onChange={e => setModeFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
-              <option value="all">全部模式</option>
-              {(['text', 'image', 'imageTail', 'multiImage', 'multiModal'] as Task['mode'][]).map(mode => <option key={mode} value={mode}>{getModeText(mode)}</option>)}
-            </select>
-            <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
-              <option value="all">全部标签</option>
-              {Array.from(new Set(tasks.flatMap(task => task.tags ?? []))).sort().map(tag => <option key={tag} value={tag}>{tag}</option>)}
-            </select>
-          </div>
+
+          {/* 日期范围选择 */}
+          <DateRangePicker
+            value={{ from: dateFrom, to: dateTo }}
+            onChange={(v) => { setDateFrom(v.from); setDateTo(v.to); }}
+          />
+
+          <AppSelect
+            value={platformFilter}
+            onChange={e => setPlatformFilter(e.target.value)}
+            className="min-w-[120px]"
+            options={[{ value: 'all', label: '全部平台' }, ...runtimePlatforms.map(p => ({ value: p.id, label: p.name }))]} />
+          <AppSelect
+            value={modeFilter}
+            onChange={e => setModeFilter(e.target.value)}
+            className="min-w-[120px]"
+            options={[{ value: 'all', label: '全部模式' }, ...(['text', 'image', 'imageTail', 'multiImage', 'multiModal'] as Task['mode'][]).map(mode => ({ value: mode, label: getModeText(mode) }))]} />
+          <AppSelect
+            value={tagFilter}
+            onChange={e => setTagFilter(e.target.value)}
+            className="min-w-[120px]"
+            options={[{ value: 'all', label: '全部标签' }, ...Array.from(new Set(tasks.flatMap(task => task.tags ?? []))).sort().map(tag => ({ value: tag, label: tag }))]} />
+
           <button
             onClick={() => toggleSort('created_at')}
-            className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            className="task-control flex items-center gap-1 px-3 h-10 text-sm rounded-lg whitespace-nowrap"
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
             时间
@@ -425,7 +434,7 @@ const TasksPage: React.FC = () => {
           </button>
           <button
             onClick={() => toggleSort('status')}
-            className="flex items-center gap-1 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            className="task-control flex items-center gap-1 px-3 h-10 text-sm rounded-lg whitespace-nowrap"
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
             状态
@@ -725,7 +734,7 @@ const TasksPage: React.FC = () => {
         )}
       </div>
 
-      {contextMenu && <div className="fixed z-[80] min-w-44 rounded-lg border bg-white p-1 shadow-xl" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseLeave={() => setContextMenu(null)}>
+      {contextMenu && <div className="context-menu fixed z-[80] min-w-44 rounded-lg border bg-white p-1 shadow-xl" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseLeave={() => setContextMenu(null)}>
         {canRetryTask(contextMenu.task) && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { void handleRetryTask(contextMenu.task.id); setContextMenu(null); }}>重试任务</button>}
         {contextMenu.task.saved_params && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { requestReuseTask(contextMenu.task.id); setContextMenu(null); }}>复用参数</button>}
         {contextMenu.task.video_url && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { handleDownload(contextMenu.task.video_url, contextMenu.task.id); setContextMenu(null); }}>下载视频</button>}
