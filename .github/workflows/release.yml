@@ -45,6 +45,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # 3.1 依赖去重，避免 electron-builder duplicate dependency references
+      - name: Dedupe dependencies
+        run: npm dedupe
+
       # 4. 构建 Electron 安装包（Windows / macOS / Linux）
       - name: Build installer (${{ matrix.name }})
         run: npm run electron:build
