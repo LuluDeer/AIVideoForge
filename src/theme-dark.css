@@ -254,6 +254,11 @@
 [data-theme='dark'] .status-pill { color: var(--text-muted); background: var(--surface-muted); }
 [data-theme='dark'] .config-page [class~='bg-orange-50'] { background: rgba(120, 76, 27, 0.24) !important; }
 [data-theme='dark'] .config-page [class~='bg-gray-50'] { background: var(--surface-soft) !important; }
+[data-theme='dark'] .system-proxy-note {
+  color: var(--text-muted) !important;
+  background: rgba(101, 183, 255, 0.1) !important;
+  border-color: rgba(101, 183, 255, 0.22) !important;
+}
 [data-theme='dark'] .generate-page [class*='border-dashed'] { background: linear-gradient(135deg, rgba(154, 167, 255, 0.1), rgba(94, 224, 196, 0.06)) !important; border-color: rgba(154, 167, 255, 0.38) !important; }
 [data-theme='dark'] .app-loading { color: var(--text-muted); }
 

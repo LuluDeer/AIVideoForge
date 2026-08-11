@@ -46,6 +46,7 @@ function buildImportSummary(parsed: unknown, config: AppConfig): ConfigImportSum
   if (hasOwn(parsedRecord, 'activePlatformId')) systemSettings.push('当前平台');
   if (hasOwn(parsedRecord, 'downloadPath')) systemSettings.push('下载目录');
   if (hasOwn(parsedRecord, 'autoDownload')) systemSettings.push('自动下载');
+  if (hasOwn(parsedRecord, 'httpProxy')) systemSettings.push('HTTP代理');
   if (hasOwn(parsedRecord, 'imageUploadMode')) systemSettings.push('图片上传方式');
 
   const platformSecretCount = rawPlatforms.filter(platform => nonEmptyString(platform.apiKey)).length;

@@ -105,6 +105,10 @@ export interface AppConfig {
   platforms: UserPlatformConfig[];
   downloadPath: string;
   autoDownload: boolean;
+  /** 是否使用操作系统代理；关闭时强制直连 */
+  useSystemProxy: boolean;
+  /** HTTP 代理地址；保留用于兼容旧配置 */
+  httpProxy: string;
   uploadCk: string;
   /** 旧版全局图片上传模式，仅用于兼容迁移；新配置请使用平台级 imageUploadMode */
   imageUploadMode?: ImageUploadMode;

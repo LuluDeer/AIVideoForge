@@ -223,6 +223,40 @@ const ConfigPage: React.FC = () => {
             {appConfig.autoDownload && !appConfig.downloadPath && <p className="mt-2 text-xs text-red-500">请先选择下载目录，否则新任务不会启用自动下载。</p>}
             {folderMessage && <p className="mt-2 text-xs text-green-600">{folderMessage}</p>}
           </div>
+
+          <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm font-medium text-gray-700">使用系统代理</span>
+                  <span className="text-xs leading-5 text-gray-500">关闭时强制直连，避免系统代理影响视频生成；开启后使用 Windows / 系统代理设置。</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={appConfig.useSystemProxy}
+                onClick={() => updateAppConfig({ useSystemProxy: !appConfig.useSystemProxy })}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.useSystemProxy ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
+                title={appConfig.useSystemProxy ? '关闭系统代理' : '开启系统代理'}
+              >
+                <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appConfig.useSystemProxy ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+            <p className="system-proxy-note text-xs text-gray-500 bg-blue-50/70 border border-blue-100 rounded-lg px-2 py-1 mt-3">保存后会立即同步到桌面端网络会话；已提交或正在轮询的任务无需刷新或重新提交，后续轮询请求会使用新的网络设置。</p>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">手动 HTTP 代理（兼容旧配置）</label>
+            <input
+              type="text"
+              value={appConfig.httpProxy ?? ''}
+              onChange={e => updateAppConfig({ httpProxy: e.target.value })}
+              placeholder="例如：http://127.0.0.1:7890"
+              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+            />
+            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 mt-2">当前版本优先使用上方「使用系统代理」开关：关闭时直连，开启时读取系统代理。此字段仅保留用于兼容旧配置。</p>
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">上传 Cookie（ck）</label>
             <div className="relative">

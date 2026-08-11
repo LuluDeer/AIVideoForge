@@ -17,6 +17,8 @@ const currentConfig: AppConfig = {
   }],
   downloadPath: 'D:/downloads',
   autoDownload: true,
+  useSystemProxy: false,
+  httpProxy: 'http://127.0.0.1:7890',
   uploadCk: 'current-upload-cookie',
   imageUploadMode: 'geekai',
 };
@@ -36,6 +38,8 @@ describe('config import/export safety', () => {
       activePlatformId: 'apizzz',
       downloadPath: 'E:/safe',
       autoDownload: false,
+      useSystemProxy: true,
+      httpProxy: 'http://127.0.0.1:1080',
       uploadCk: 'file-upload-cookie',
       imageUploadMode: 'url',
       platforms: [{
@@ -62,6 +66,8 @@ describe('config import/export safety', () => {
     expect(result.config.platforms[0].apiKey).toBe('current-api-key');
     expect(result.config.customPlatforms?.[0].apiKey).toBe('current-custom-key');
     expect(result.config.activePlatformId).toBe('apizzz');
+    expect(result.config.useSystemProxy).toBe(true);
+    expect(result.config.httpProxy).toBe('http://127.0.0.1:1080');
     expect(result.summary.ignoredSecretFields).toBe(3);
     expect(result.summary.message).toContain('导入不会恢复 API Key / uploadCk');
     expect(result.summary.customModels).toBe(2);

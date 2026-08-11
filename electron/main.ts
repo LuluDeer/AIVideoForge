@@ -174,6 +174,19 @@ ipcMain.handle('set-cookies', async (_event, ck) => {
   }
 });
 
+ipcMain.handle('set-http-proxy-config', async (_event, config) => {
+  try {
+    const useSystemProxy = isRecord(config) && config.useSystemProxy === true;
+    const mode = useSystemProxy ? 'system' : 'direct';
+    await session.defaultSession.setProxy({ mode });
+    console.log(`Proxy mode set: ${mode}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to set proxy config:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
 ipcMain.handle('make-request', async (_event, reqUrl, options) => {
   return new Promise((resolve, reject) => {
     try {
@@ -482,7 +495,13 @@ ipcMain.handle('open-update-download', async (_event, targetUrl: string) => {
   return { success: true };
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    await session.defaultSession.setProxy({ mode: 'direct' });
+  } catch (error) {
+    console.error('Failed to initialize direct proxy mode:', error);
+  }
+
   createWindow();
 
   app.on('activate', () => {
