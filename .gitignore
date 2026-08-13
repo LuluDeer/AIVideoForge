@@ -7,14 +7,45 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local app config
+custom_platforms.json
+
+# Local IDE/agent state
+.trae/
+.zcode/
+
+# Local debug artifacts
+.dbg/
+debug-*.md
+report.md
+
 # Dependencies
 node_modules
+.pnpm-store/
 
 # Build outputs
 dist
 dist-ssr
 release
+out
+build
 *.local
+
+# Test and coverage
+coverage
+.nyc_output
+
+# Cache and temporary files
+.vite
+.cache
+.eslintcache
+*.tsbuildinfo
+node_modules/.tmp/
 
 # Editor directories and files
 .vscode/*

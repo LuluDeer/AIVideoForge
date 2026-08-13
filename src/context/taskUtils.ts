@@ -59,6 +59,11 @@ export function getTaskVideoUrl(result: Pick<TaskQueryResponse, 'task_id' | 'vid
   return undefined;
 }
 
+export function isConfiguredDownloadVideoUrl(videoUrl: string | undefined, taskId: string | undefined, platform?: RuntimePlatform): boolean {
+  if (!videoUrl || !taskId || !platform?.endpoints.downloadVideo) return false;
+  return videoUrl === getAbsoluteEndpointUrl(platform, 'downloadVideo', taskId);
+}
+
 export function formatPollError(error: unknown, count: number): string {
   const message = getApiSafeMessage(error, '网络或服务异常');
   return `轮询暂时失败（连续 ${count} 次）：${message}`;

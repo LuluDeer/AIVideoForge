@@ -16,6 +16,7 @@ import {
   formatPollError,
   getDownloadRetryDelay,
   getTaskVideoUrl,
+  isConfiguredDownloadVideoUrl,
   isDownloadRetryEligible,
   isTaskActive,
   isTaskFailed,
@@ -170,7 +171,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
       }
       const taskPlatform = getTaskPlatform(task);
-      const downloadHeaders = taskPlatform?.apiKey ? { Authorization: `Bearer ${taskPlatform.apiKey}` } : undefined;
+      const useConfiguredDownloadEndpoint = isConfiguredDownloadVideoUrl(videoUrl, task.id, taskPlatform);
+      const downloadHeaders = useConfiguredDownloadEndpoint && taskPlatform?.apiKey ? { Authorization: `Bearer ${taskPlatform.apiKey}` } : undefined;
       const result = await window.electronAPI.downloadFile(videoUrl, targetPath, task.id, downloadHeaders);
       updateTask(task.id, {
         downloaded: true,
