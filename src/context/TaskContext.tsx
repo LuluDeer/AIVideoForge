@@ -169,7 +169,9 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         });
       }
-      const result = await window.electronAPI.downloadFile(videoUrl, targetPath, task.id);
+      const taskPlatform = getTaskPlatform(task);
+      const downloadHeaders = taskPlatform?.apiKey ? { Authorization: `Bearer ${taskPlatform.apiKey}` } : undefined;
+      const result = await window.electronAPI.downloadFile(videoUrl, targetPath, task.id, downloadHeaders);
       updateTask(task.id, {
         downloaded: true,
         download_status: 'downloaded',

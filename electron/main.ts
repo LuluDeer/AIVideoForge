@@ -293,7 +293,7 @@ ipcMain.handle('select-folder', async () => {
   return { success: false };
 });
 
-ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string, taskId?: string) => {
+ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string, taskId?: string, requestHeaders?: Record<string, string>) => {
   return new Promise((resolve, reject) => {
     if (!savePath) {
       reject(new Error('未设置下载路径'));
@@ -329,7 +329,12 @@ ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string,
       }
     };
 
-    const req = https.request(fileUrl, (res) => {
+    const headers: Record<string, string> = {};
+    if (requestHeaders && typeof requestHeaders.Authorization === 'string') {
+      headers.Authorization = requestHeaders.Authorization;
+    }
+
+    const req = https.request(urlObj, { headers }, (res) => {
       if (res.statusCode === 200) {
         const totalBytes = Number(res.headers['content-length'] || 0);
         let receivedBytes = 0;

@@ -14,7 +14,7 @@ export interface ElectronApi {
   selectFolder: () => Promise<{ success?: boolean; path?: string }>;
   setCookies: (ck: string) => Promise<unknown>;
   setHttpProxyConfig: (config: HttpProxyConfig) => Promise<{ success: boolean; error?: string }>;
-  downloadFile: (url: string, path: string, taskId?: string) => Promise<{ success: boolean; filePath: string; savePath: string }>;
+  downloadFile: (url: string, path: string, taskId?: string, headers?: Record<string, string>) => Promise<{ success: boolean; filePath: string; savePath: string }>;
   openPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>;
   onDownloadProgress: (callback: (payload: DownloadProgressPayload) => void) => () => void;
   makeRequest: (url: string, options: {
