@@ -94,7 +94,7 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
         audio_urls: Array.isArray(item.request.audio) ? item.request.audio as string[] : (typeof item.request.audio === 'string' ? [item.request.audio] : undefined),
         status: normalizeTaskStatus(response.task_status),
         raw_status: response.task_status,
-        video_url: getTaskVideoUrl(response),
+        video_url: getTaskVideoUrl(response, platform),
         auto_download: Boolean(item.autoDownload && item.downloadPath),
         downloaded: false,
         download_status: item.autoDownload && item.downloadPath ? 'waiting' : undefined,

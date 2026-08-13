@@ -157,6 +157,7 @@ function sanitizeCustomPlatforms(value: unknown, current: CustomPlatformDef[] = 
     const endpoints = isRecord(endpointsValue) ? {
       createVideo: str(endpointsValue.createVideo),
       queryTask: str(endpointsValue.queryTask),
+      downloadVideo: optionalStr(endpointsValue.downloadVideo),
       queryTaskList: optionalStr(endpointsValue.queryTaskList),
       deleteTask: optionalStr(endpointsValue.deleteTask),
     } : { createVideo: '', queryTask: '' };

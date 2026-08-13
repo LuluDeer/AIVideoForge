@@ -36,4 +36,4 @@ export interface UnifiedResponse {
   videos?: Array<{ url?: string } | string>;
 }
 
-export type EndpointType = 'createVideo' | 'queryTask' | 'queryTaskList' | 'deleteTask';
+export type EndpointType = 'createVideo' | 'queryTask' | 'downloadVideo' | 'queryTaskList' | 'deleteTask';

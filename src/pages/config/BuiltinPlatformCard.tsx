@@ -128,9 +128,16 @@ const BuiltinPlatformCard: React.FC<{ platformId: string }> = ({ platformId }) =
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
+                    <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">下载视频路径（可选）</label>
+                    <input type="text" value={endpoints.downloadVideo ?? ''} onChange={e => updateEndpoints({ downloadVideo: e.target.value || undefined })} placeholder="/v1/videos/{task_id}/content.mp4" className={INPUT_CLASS} />
+                    <p className="mt-1 text-xs leading-5 text-gray-400">配置后任务成功时可直接用该路径下载；留空则继续使用查询结果中的视频地址。</p>
+                  </div>
+                  <div>
                     <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">任务列表路径（可选）</label>
                     <input type="text" value={endpoints.queryTaskList ?? ''} onChange={e => updateEndpoints({ queryTaskList: e.target.value || undefined })} placeholder={def.defaultEndpoints.queryTaskList ?? '/v1/videos'} className={INPUT_CLASS} />
                   </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label className="mb-1.5 block text-xs font-medium leading-normal text-gray-600">取消/删除路径（可选）</label>
                     <input type="text" value={endpoints.deleteTask ?? ''} onChange={e => updateEndpoints({ deleteTask: e.target.value || undefined })} placeholder={def.defaultEndpoints.deleteTask ?? '/v1/videos/{id}'} className={INPUT_CLASS} />

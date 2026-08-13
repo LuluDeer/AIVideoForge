@@ -68,6 +68,8 @@ export interface PlatformDef {
 export interface ApiEndpoints {
   createVideo: string;
   queryTask: string;
+  /** 任务完成后的固定视频内容下载端点（可选，支持 {id} / {task_id} 占位符） */
+  downloadVideo?: string;
   /** 任务列表查询端点（豆包官方支持，中转站可选） */
   queryTaskList?: string;
   /** 取消/删除任务端点（豆包官方支持，中转站可选） */

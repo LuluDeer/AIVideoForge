@@ -33,6 +33,7 @@ function mergeToRuntime(platformId: string, userConfig?: UserPlatformConfig): Ru
     endpoints: {
       createVideo: userConfig?.endpoints?.createVideo ?? def.defaultEndpoints.createVideo,
       queryTask: userConfig?.endpoints?.queryTask ?? def.defaultEndpoints.queryTask,
+      downloadVideo: userConfig?.endpoints?.downloadVideo ?? def.defaultEndpoints.downloadVideo,
       queryTaskList: userConfig?.endpoints?.queryTaskList ?? def.defaultEndpoints.queryTaskList,
       deleteTask: userConfig?.endpoints?.deleteTask ?? def.defaultEndpoints.deleteTask,
     },

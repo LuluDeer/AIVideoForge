@@ -230,7 +230,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       for (const rt of remoteTasks) {
         if (!rt.task_id) continue;
         const status = normalizeTaskStatus(rt.task_status);
-        const videoUrl = getTaskVideoUrl(rt);
+        const videoUrl = getTaskVideoUrl(rt, platform);
         if (!existingIds.has(rt.task_id)) {
           newTasks.push({
             id: rt.task_id,
@@ -299,7 +299,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    const videoUrl = getTaskVideoUrl(result);
+    const videoUrl = getTaskVideoUrl(result, taskPlatform);
     const nextStatus = normalizeTaskStatus(result.task_status);
     updateTask(task.id, {
       status: nextStatus,
@@ -364,6 +364,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const api = new VideoApi(taskPlatform);
       const response = await api.generateVideo(request);
       const responseStatus = normalizeTaskStatus(response.task_status);
+      const videoUrl = getTaskVideoUrl(response, taskPlatform);
       setTasks(prev => {
         const next = prev.map(t => {
           if (t.id !== taskId) return t;
@@ -373,7 +374,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             id: response.task_id,
             status: responseStatus,
             raw_status: response.task_status,
-            video_url: getTaskVideoUrl(response),
+            video_url: videoUrl,
             error_message: undefined,
             enhanced_prompt: response.enhanced_prompt,
             poll_count: 0,

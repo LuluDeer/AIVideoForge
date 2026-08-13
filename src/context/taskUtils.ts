@@ -1,4 +1,5 @@
-import type { GenerationMode, Task, TaskQueryResponse } from '../types';
+import type { GenerationMode, RuntimePlatform, Task, TaskQueryResponse } from '../types';
+import { getAbsoluteEndpointUrl } from '../services/api/endpoint';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import { matchesTaskStatusFilter, normalizeTaskStatus } from '../utils/taskStatus';
 export {
@@ -51,8 +52,11 @@ export const LOCAL_ONLY_IMAGE_MESSAGE = '本地图片未保存，请重新上传
 
 const LOCAL_DATA_URL_RE = /^(data:|blob:)/i;
 
-export function getTaskVideoUrl(result: Pick<TaskQueryResponse, 'video_result'>): string | undefined {
-  return result.video_result?.find(item => item?.url)?.url;
+export function getTaskVideoUrl(result: Pick<TaskQueryResponse, 'task_id' | 'video_result'>, platform?: RuntimePlatform): string | undefined {
+  const videoUrl = result.video_result?.find(item => item?.url)?.url;
+  if (videoUrl) return videoUrl;
+  if (platform?.endpoints.downloadVideo && result.task_id) return getAbsoluteEndpointUrl(platform, 'downloadVideo', result.task_id);
+  return undefined;
 }
 
 export function formatPollError(error: unknown, count: number): string {

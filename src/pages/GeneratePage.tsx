@@ -447,7 +447,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
             audio_urls: Array.isArray(request.audio) ? request.audio : (typeof request.audio === 'string' ? [request.audio] : undefined),
             status: normalizeTaskStatus(response.task_status),
             raw_status: response.task_status,
-            video_url: getTaskVideoUrl(response),
+            video_url: getTaskVideoUrl(response, activePlatform),
             auto_download: Boolean(appConfig.autoDownload && appConfig.downloadPath),
             downloaded: false,
             download_status: appConfig.autoDownload && appConfig.downloadPath ? 'waiting' : undefined,
