@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('updateAPI', {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   setCookies: (ck) => ipcRenderer.invoke('set-cookies', ck),
+  setHttpProxyConfig: (config) => ipcRenderer.invoke('set-http-proxy-config', config),
   makeRequest: (url, options) => ipcRenderer.invoke('make-request', url, options),
   uploadToCos: (buffer, options) => ipcRenderer.invoke('upload-to-cos', buffer, options),
   selectFolder: () => ipcRenderer.invoke('select-folder'),

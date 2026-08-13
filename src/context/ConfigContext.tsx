@@ -69,6 +69,14 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       logger.warn('ConfigContext', '自动保存配置失败', error);
     });
     if (!ok) return;
+    if (window.electronAPI) {
+      void window.electronAPI.setHttpProxyConfig({
+        useSystemProxy: normalized.useSystemProxy,
+        httpProxy: normalized.httpProxy ?? '',
+      }).catch(error => {
+        logger.warn('ConfigContext', '同步代理配置失败', error);
+      });
+    }
     setSaveSuccess(true);
     const t = setTimeout(() => setSaveSuccess(false), 2000);
     return () => clearTimeout(t);
@@ -286,7 +294,13 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let storageError: unknown;
       const ok = writeJsonStorage(STORAGE_KEY, encrypted, error => { storageError = error; });
       if (!ok) throw storageError ?? new Error('localStorage 不可用');
-      if (normalized.uploadCk && window.electronAPI) await window.electronAPI.setCookies(normalized.uploadCk);
+      if (window.electronAPI) {
+        if (normalized.uploadCk) await window.electronAPI.setCookies(normalized.uploadCk);
+        await window.electronAPI.setHttpProxyConfig({
+          useSystemProxy: normalized.useSystemProxy,
+          httpProxy: normalized.httpProxy ?? '',
+        });
+      }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {

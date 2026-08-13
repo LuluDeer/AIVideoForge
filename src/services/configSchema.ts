@@ -12,6 +12,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   platforms: [],
   downloadPath: '',
   autoDownload: false,
+  useSystemProxy: false,
+  httpProxy: '',
   uploadCk: '',
   imageUploadMode: 'geekai',
 };
@@ -189,6 +191,8 @@ export function normalizeAppConfig(
     customPlatforms: sanitizeCustomPlatforms(value.customPlatforms, current.customPlatforms, includeSecrets),
     downloadPath: str(value.downloadPath, current.downloadPath),
     autoDownload: bool(value.autoDownload, current.autoDownload),
+    useSystemProxy: bool(value.useSystemProxy, current.useSystemProxy),
+    httpProxy: str(value.httpProxy, current.httpProxy),
     uploadCk: includeSecrets ? str(value.uploadCk, current.uploadCk) : current.uploadCk,
     imageUploadMode: imageUploadMode(value.imageUploadMode, current.imageUploadMode ?? 'geekai'),
   });
@@ -205,6 +209,8 @@ export function migrateLegacyConfig(legacy: unknown): AppConfig {
   return normalizeAppConfig({
     activePlatformId: legacy.activePlatformId,
     uploadCk: legacy.uploadCk,
+    useSystemProxy: legacy.useSystemProxy,
+    httpProxy: legacy.httpProxy,
     downloadPath: legacy.downloadPath,
     autoDownload: legacy.autoDownload,
     platforms: legacyPlatforms,
