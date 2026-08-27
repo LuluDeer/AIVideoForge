@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   makeRequest: (url, options) => ipcRenderer.invoke('make-request', url, options),
   uploadToCos: (buffer, options) => ipcRenderer.invoke('upload-to-cos', buffer, options),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  checkDir: (targetPath) => ipcRenderer.invoke('check-dir', targetPath),
   downloadFile: (url, savePath, taskId, headers) => ipcRenderer.invoke('download-file', url, savePath, taskId, headers),
   openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
   readDataFile: (filename) => ipcRenderer.invoke('read-data-file', filename),

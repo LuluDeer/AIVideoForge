@@ -5,7 +5,7 @@ export type GenerationMode = 'text' | 'image' | 'imageTail' | 'multiImage' | 'mu
 export type ApiFormatType = 'unified' | 'openai' | 'seedance';
 
 // ─── 图片上传方式 ─────────────────────────────────────────────
-export type ImageUploadMode = 'geekai' | 'base64' | 'url';
+export type ImageUploadMode = 'geekai' | 'base64' | 'url' | 'cloudreve';
 
 // ─── 参数选项 ────────────────────────────────────────────────
 export interface ParamOption {
@@ -112,6 +112,8 @@ export interface AppConfig {
   /** HTTP 代理地址；保留用于兼容旧配置 */
   httpProxy: string;
   uploadCk: string;
+  /** Cloudreve 存储服务 ApiKey，用于「上传到 Cloudreve」图传方式 */
+  cloudreveApiKey: string;
   /** 旧版全局图片上传模式，仅用于兼容迁移；新配置请使用平台级 imageUploadMode */
   imageUploadMode?: ImageUploadMode;
   /** 用户自定义平台列表 */

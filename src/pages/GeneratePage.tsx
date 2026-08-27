@@ -8,6 +8,7 @@ import type { GenerationMode, VideoGenerationRequest, ParamDef, ParamOption } fr
 import VideoApi from '../services/api';
 import { buildRequestPayload } from '../services/api/payloadBuilders';
 import ImageUploader from '../services/imageUpload';
+import CloudreveUploader from '../services/cloudreveUpload';
 import GeekaiAssetService, { type GeekaiAssetKind } from '../services/geekaiAssets';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import { resolveParam } from '../services/modelConfigManager';
@@ -510,6 +511,25 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         reader.onload = e => resolve((e.target?.result as string) ?? null);
         reader.readAsDataURL(file);
       });
+    }
+    if (mode === 'cloudreve') {
+      if (!appConfig.cloudreveApiKey.trim()) {
+        setError('当前平台图片上传方式为 Cloudreve，但还没有填写 Cloudreve ApiKey。为避免调用存储接口，请到配置页填写 ApiKey，或将当前平台的图传方式改为 Base64 / 仅 URL。');
+        return null;
+      }
+      if (_paramKey) setUploadingKey(_paramKey);
+      const uploader = new CloudreveUploader(appConfig.cloudreveApiKey);
+      try {
+        const result = await uploader.uploadImage(file);
+        return result ?? null;
+      } catch (err) {
+        logger.warn('GeneratePage', 'Cloudreve 图片上传失败', err);
+        const detail = getApiSafeMessage(err, '服务未返回可用图片地址');
+        setError(`图片上传失败：${formatErrorWithAdvice(detail, '重新上传图片')}。也可粘贴可公开访问的图片 URL。`);
+        return null;
+      } finally {
+        if (_paramKey) setUploadingKey(null);
+      }
     }
     if (!appConfig.uploadCk.trim()) {
       setError('当前平台图片上传方式为 GeekAI CDN，但还没有填写上传 Cookie（ck）。为避免调用存储接口，请到配置页填写 ck，或将当前平台的图传方式改为 Base64 / 仅 URL。');

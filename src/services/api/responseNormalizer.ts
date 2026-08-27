@@ -21,16 +21,6 @@ export function normalizeResponse(raw: unknown): VideoGenerationResponse {
   if (!raw) throw new Error('响应数据为空');
   let response = raw as UnifiedResponse;
 
-  if (response.error && typeof response.error === 'object' && response.error.message) {
-    throw new Error(response.error.message);
-  }
-  if (response.error_code !== undefined && response.error_code !== 0) {
-    throw new Error(response.msg || response.message || `接口错误码: ${response.error_code}`);
-  }
-  if (response.code !== undefined && response.code !== 0 && response.code !== 200) {
-    throw new Error(response.msg || response.message || `接口错误码: ${response.code}`);
-  }
-
   if (response.data && (response.data.task_id || response.data.id || response.data.status)) {
     response = response.data;
   }
@@ -48,11 +38,29 @@ export function normalizeResponse(raw: unknown): VideoGenerationResponse {
     };
   }
 
-  const errorMessage = response.error_message || response.error?.message || response.msg || response.message;
   const rawStatus = response.task_status ?? response.status;
+  const taskStatus = normalizeTaskStatus(rawStatus);
+  const hasTaskId = !!response.task_id || !!response.id;
+  // 终态任务（succeed/failed/cancelled）响应里的 error 字段只是失败原因，不是接口级错误。
+  // 若在此抛异常，轮询会把失败任务当成网络异常处理，任务状态会永远卡在“生成中”。
+  const isTaskResult = hasTaskId && (taskStatus === 'succeed' || taskStatus === 'failed' || taskStatus === 'cancelled');
+
+  if (!isTaskResult) {
+    if (response.error && typeof response.error === 'object' && response.error.message) {
+      throw new Error(response.error.message);
+    }
+    if (response.error_code !== undefined && response.error_code !== 0) {
+      throw new Error(response.msg || response.message || `接口错误码: ${response.error_code}`);
+    }
+    if (response.code !== undefined && response.code !== 0 && response.code !== 200) {
+      throw new Error(response.msg || response.message || `接口错误码: ${response.code}`);
+    }
+  }
+
+  const errorMessage = response.error_message || response.error?.message || response.msg || response.message;
   const common = {
     model: response.model || '',
-    task_status: normalizeTaskStatus(rawStatus),
+    task_status: taskStatus,
     enhanced_prompt: response.enhanced_prompt,
     last_frame_url: response.content?.last_frame_url ?? response.last_frame_url,
     created_at: normalizeTimestamp(response.created_at),

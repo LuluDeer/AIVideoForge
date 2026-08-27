@@ -15,6 +15,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   useSystemProxy: false,
   httpProxy: '',
   uploadCk: '',
+  cloudreveApiKey: '',
   imageUploadMode: 'geekai',
 };
 
@@ -41,7 +42,7 @@ const optionalApiFormat = (value: unknown): ApiFormatType | undefined =>
   value === 'openai' || value === 'seedance' || value === 'unified' ? value : undefined;
 
 const imageUploadMode = (value: unknown, fallback: AppConfig['imageUploadMode']): AppConfig['imageUploadMode'] =>
-  value === 'geekai' || value === 'base64' || value === 'url' ? value : fallback;
+  value === 'geekai' || value === 'base64' || value === 'url' || value === 'cloudreve' ? value : fallback;
 
 const normalizePlatformId = (value: string): string =>
   value === 'doubao-official' ? 'seedance' : value;
@@ -179,23 +180,25 @@ function sanitizeCustomPlatforms(value: unknown, current: CustomPlatformDef[] = 
 
 export function normalizeAppConfig(
   value: unknown,
-  options: { current?: AppConfig; includeSecrets?: boolean } = {},
+  options: { current?: AppConfig; includeSecrets?: boolean; includeSystemConfig?: boolean } = {},
 ): AppConfig {
   const current = options.current ?? DEFAULT_APP_CONFIG;
   const includeSecrets = options.includeSecrets ?? true;
+  const includeSystemConfig = options.includeSystemConfig ?? true;
   if (!isSafeConfigLike(value)) return { ...DEFAULT_APP_CONFIG, ...current, schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION };
 
   return stripUndefined({
     schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-    activePlatformId: normalizePlatformId(str(value.activePlatformId, current.activePlatformId)),
+    activePlatformId: includeSystemConfig ? normalizePlatformId(str(value.activePlatformId, current.activePlatformId)) : current.activePlatformId,
     platforms: sanitizePlatforms(value.platforms, current.platforms, includeSecrets),
     customPlatforms: sanitizeCustomPlatforms(value.customPlatforms, current.customPlatforms, includeSecrets),
-    downloadPath: str(value.downloadPath, current.downloadPath),
-    autoDownload: bool(value.autoDownload, current.autoDownload),
-    useSystemProxy: bool(value.useSystemProxy, current.useSystemProxy),
-    httpProxy: str(value.httpProxy, current.httpProxy),
+    downloadPath: includeSystemConfig ? str(value.downloadPath, current.downloadPath) : current.downloadPath,
+    autoDownload: includeSystemConfig ? bool(value.autoDownload, current.autoDownload) : current.autoDownload,
+    useSystemProxy: includeSystemConfig ? bool(value.useSystemProxy, current.useSystemProxy) : current.useSystemProxy,
+    httpProxy: includeSystemConfig ? str(value.httpProxy, current.httpProxy) : current.httpProxy,
     uploadCk: includeSecrets ? str(value.uploadCk, current.uploadCk) : current.uploadCk,
-    imageUploadMode: imageUploadMode(value.imageUploadMode, current.imageUploadMode ?? 'geekai'),
+    cloudreveApiKey: includeSecrets ? str(value.cloudreveApiKey, current.cloudreveApiKey) : current.cloudreveApiKey,
+    imageUploadMode: includeSystemConfig ? imageUploadMode(value.imageUploadMode, current.imageUploadMode ?? 'geekai') : (current.imageUploadMode ?? 'geekai'),
   });
 }
 
@@ -210,6 +213,7 @@ export function migrateLegacyConfig(legacy: unknown): AppConfig {
   return normalizeAppConfig({
     activePlatformId: legacy.activePlatformId,
     uploadCk: legacy.uploadCk,
+    cloudreveApiKey: legacy.cloudreveApiKey,
     useSystemProxy: legacy.useSystemProxy,
     httpProxy: legacy.httpProxy,
     downloadPath: legacy.downloadPath,
@@ -219,14 +223,16 @@ export function migrateLegacyConfig(legacy: unknown): AppConfig {
 }
 
 export function createImportedConfig(parsed: unknown, current: AppConfig): AppConfig {
-  return normalizeAppConfig(parsed, { current, includeSecrets: false });
+  // 导入不覆盖系统配置（当前平台、下载目录、自动下载、代理、图片上传方式等），只合并平台与模型；
+  // 密钥一律不导入（已有平台保留原 key，新平台不带 key）。
+  return normalizeAppConfig(parsed, { current, includeSecrets: false, includeSystemConfig: false });
 }
 
-export function createSafeExportConfig(config: AppConfig): AppConfig {
+export type SafeExportConfig = Pick<AppConfig, 'schemaVersion' | 'platforms' | 'customPlatforms'>;
+
+export function createSafeExportConfig(config: AppConfig): SafeExportConfig {
   return stripUndefined({
-    ...normalizeAppConfig(config),
     schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-    uploadCk: '',
     platforms: config.platforms.map(platform => ({ ...platform, apiKey: '' })),
     customPlatforms: (config.customPlatforms ?? []).map(platform => ({ ...platform, apiKey: '' })),
   });
