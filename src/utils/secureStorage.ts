@@ -71,7 +71,8 @@ export async function encryptAppConfigForStorage(config: AppConfig): Promise<App
       })))
     : config.customPlatforms;
   const uploadCk = isEncryptedSecret(config.uploadCk) ? config.uploadCk : await encryptSecret(config.uploadCk);
-  return { ...config, platforms, customPlatforms, uploadCk };
+  const cloudreveApiKey = isEncryptedSecret(config.cloudreveApiKey) ? config.cloudreveApiKey : await encryptSecret(config.cloudreveApiKey);
+  return { ...config, platforms, customPlatforms, uploadCk, cloudreveApiKey };
 }
 
 /**
@@ -90,5 +91,6 @@ export async function decryptAppConfigFromStorage(config: AppConfig): Promise<Ap
       })))
     : config.customPlatforms;
   const uploadCk = await decryptSecret(config.uploadCk);
-  return { ...config, platforms, customPlatforms, uploadCk };
+  const cloudreveApiKey = await decryptSecret(config.cloudreveApiKey);
+  return { ...config, platforms, customPlatforms, uploadCk, cloudreveApiKey };
 }

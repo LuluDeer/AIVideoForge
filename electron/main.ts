@@ -293,6 +293,18 @@ ipcMain.handle('select-folder', async () => {
   return { success: false };
 });
 
+ipcMain.handle('check-dir', async (_event, targetPath: string) => {
+  if (!targetPath) return { success: false, exists: false, error: '路径为空' };
+  try {
+    if (!fs.existsSync(targetPath)) return { success: false, exists: false, error: '路径不存在' };
+    const stat = fs.statSync(targetPath);
+    if (stat.isDirectory()) return { success: true, exists: true };
+    return { success: false, exists: true, error: '路径不是文件夹' };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
 ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string, taskId?: string, requestHeaders?: Record<string, string>) => {
   return new Promise((resolve, reject) => {
     if (!savePath) {
@@ -313,7 +325,21 @@ ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string,
       return;
     }
 
-    fs.mkdirSync(savePath, { recursive: true });
+    // 校验并创建下载目录；失败时给出明确的中文提示，避免后续写入时报原生错误
+    try {
+      if (fs.existsSync(savePath)) {
+        const stat = fs.statSync(savePath);
+        if (!stat.isDirectory()) {
+          reject(new Error(`下载路径「${savePath}」不是文件夹，自动下载失败`));
+          return;
+        }
+      } else {
+        fs.mkdirSync(savePath, { recursive: true });
+      }
+    } catch (error) {
+      reject(new Error(`创建下载目录失败（${error instanceof Error ? error.message : String(error)}），请检查下载路径「${savePath}」是否存在或可写`));
+      return;
+    }
     const urlFileName = decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`;
     // 优先使用 taskId 作为文件名，避免中转站默认同名文件互相覆盖
     let fileName = urlFileName;

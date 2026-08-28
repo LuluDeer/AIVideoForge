@@ -10,8 +10,15 @@ export interface HttpProxyConfig {
   httpProxy?: string;
 }
 
+export interface CheckDirResult {
+  success: boolean;
+  exists?: boolean;
+  error?: string;
+}
+
 export interface ElectronApi {
   selectFolder: () => Promise<{ success?: boolean; path?: string }>;
+  checkDir: (targetPath: string) => Promise<CheckDirResult>;
   setCookies: (ck: string) => Promise<unknown>;
   setHttpProxyConfig: (config: HttpProxyConfig) => Promise<{ success: boolean; error?: string }>;
   downloadFile: (url: string, path: string, taskId?: string, headers?: Record<string, string>) => Promise<{ success: boolean; filePath: string; savePath: string }>;

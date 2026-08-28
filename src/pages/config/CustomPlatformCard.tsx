@@ -23,6 +23,7 @@ const CustomPlatformCard: React.FC<{
   const models = platform.models ?? [];
   const uploadModeOptions = [
     { value: 'geekai', label: '上传到 GeekAI CDN（需要 ck）' },
+    { value: 'cloudreve', label: '上传到 Cloudreve（需要密钥）' },
     { value: 'base64', label: '转为 Base64 内联' },
     { value: 'url', label: '仅 URL 输入（不上传）' },
   ];
@@ -115,7 +116,7 @@ const CustomPlatformCard: React.FC<{
                     className="w-full"
                     options={uploadModeOptions}
                   />
-                  <p className="mt-1 text-xs leading-5 text-gray-400">GeekAI CDN 需要上传 Cookie；Base64 会把图片内联到请求中；仅 URL 输入不会上传本地图片。</p>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">GeekAI CDN 需要上传 Cookie；Cloudreve 需要 Cloudreve ApiKey；Base64 会把图片内联到请求中；仅 URL 输入不会上传本地图片。</p>
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>

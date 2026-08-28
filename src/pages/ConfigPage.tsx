@@ -25,8 +25,10 @@ const ConfigPage: React.FC = () => {
   const [saveError, setSaveError] = useState('');
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
+  const [importWarning, setImportWarning] = useState('');
   const [folderMessage, setFolderMessage] = useState('');
   const [showUploadCk, setShowUploadCk] = useState(false);
+  const [showCloudreveApiKey, setShowCloudreveApiKey] = useState(false);
 
   const handleExport = () => {
     const blob = new Blob([serializeConfigForExport(appConfig)], { type: 'application/json' });
@@ -48,8 +50,8 @@ const ConfigPage: React.FC = () => {
       return;
     }
     const reader = new FileReader();
-    reader.onload = ev => {
-      const result = parseImportedConfigText(String(ev.target?.result ?? ''), appConfig);
+    reader.onload = async ev => {
+      const result = await parseImportedConfigText(String(ev.target?.result ?? ''), appConfig);
       if (!result.ok) {
         setImportSuccess('');
         setImportError(result.error);
@@ -58,6 +60,7 @@ const ConfigPage: React.FC = () => {
       updateAppConfig(result.config);
       setImportError('');
       setImportSuccess(result.summary.message);
+      setImportWarning(result.warnings.length > 0 ? result.warnings.join('\n') : '');
     };
     reader.onerror = () => {
       setImportSuccess('');
@@ -111,18 +114,19 @@ const ConfigPage: React.FC = () => {
 
   const handleClearSensitiveCredentials = () => {
     const confirmed = window.confirm(
-      '确认清除本地保存的所有敏感凭据？\n\n将清除：内置平台 API Key、自定义平台 API Key、上传 Cookie（uploadCk）。\n不会删除平台、模型、参数覆盖、系统设置或任务历史。\n\n此操作不可恢复，清除后需要重新填写凭据。',
+      '确认清除本地保存的所有敏感凭据？\n\n将清除：内置平台 API Key、自定义平台 API Key、上传 Cookie（uploadCk）、Cloudreve ApiKey。\n不会删除平台、模型、参数覆盖、系统设置或任务历史。\n\n此操作不可恢复，清除后需要重新填写凭据。',
     );
     if (!confirmed) return;
 
     updateAppConfig({
       uploadCk: '',
+      cloudreveApiKey: '',
       platforms: appConfig.platforms.map(platform => ({ ...platform, apiKey: '' })),
       customPlatforms: (appConfig.customPlatforms ?? []).map(platform => ({ ...platform, apiKey: '' })),
     });
     setImportError('');
     setSaveError('');
-    setImportSuccess('已清除本地保存的所有平台 API Key、自定义平台 API Key 和 uploadCk；平台、模型、参数覆盖和任务历史均已保留。');
+    setImportSuccess('已清除本地保存的所有平台 API Key、自定义平台 API Key、uploadCk 和 Cloudreve ApiKey；平台、模型、参数覆盖和任务历史均已保留。');
   };
 
   return (
@@ -172,6 +176,12 @@ const ConfigPage: React.FC = () => {
         <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" /><span>{importError}</span>
           <button onClick={() => setImportError('')} className="ml-auto"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+      {importWarning && (
+        <div className="mb-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" /><span className="whitespace-pre-line">{importWarning}</span>
+          <button onClick={() => setImportWarning('')} className="ml-auto"><X className="w-4 h-4" /></button>
         </div>
       )}
       {saveError && (
@@ -279,6 +289,29 @@ const ConfigPage: React.FC = () => {
               </button>
             </div>
             <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「GeekAI CDN」或上传视频/音频到 GeekAI 获取 URL 时使用。</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Cloudreve ApiKey（密钥）</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={(showCloudreveApiKey || !(appConfig.cloudreveApiKey ?? '')) ? (appConfig.cloudreveApiKey ?? '') : '•••••••••••••••••••••••'}
+                readOnly={!showCloudreveApiKey && !!appConfig.cloudreveApiKey}
+                onChange={e => updateAppConfig({ cloudreveApiKey: e.target.value })}
+                placeholder="粘贴 Cloudreve 存储服务的 ApiKey..."
+                className="w-full pr-12 px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCloudreveApiKey(v => !v)}
+                className="cookie-visibility-button absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                title={showCloudreveApiKey ? '隐藏 ApiKey' : '显示 ApiKey'}
+                aria-label={showCloudreveApiKey ? '隐藏 ApiKey' : '显示 ApiKey'}
+              >
+                {showCloudreveApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「云存储 Cloudreve」上传图片时使用。</p>
           </div>
         </div>
       </section>

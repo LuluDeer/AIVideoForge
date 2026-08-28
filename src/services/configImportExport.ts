@@ -17,7 +17,7 @@ export interface ConfigImportSummary {
 }
 
 export type ConfigImportResult =
-  | { ok: true; config: AppConfig; summary: ConfigImportSummary }
+  | { ok: true; config: AppConfig; summary: ConfigImportSummary; warnings: string[] }
   | { ok: false; error: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -51,7 +51,7 @@ function buildImportSummary(parsed: unknown, config: AppConfig): ConfigImportSum
 
   const platformSecretCount = rawPlatforms.filter(platform => nonEmptyString(platform.apiKey)).length;
   const customPlatformSecretCount = rawCustomPlatforms.filter(platform => nonEmptyString(platform.apiKey)).length;
-  const ignoredSecretFields = (nonEmptyString(parsedRecord.uploadCk) ? 1 : 0) + platformSecretCount + customPlatformSecretCount;
+  const ignoredSecretFields = (nonEmptyString(parsedRecord.uploadCk) ? 1 : 0) + (nonEmptyString(parsedRecord.cloudreveApiKey) ? 1 : 0) + platformSecretCount + customPlatformSecretCount;
 
   const summary: Omit<ConfigImportSummary, 'message'> = {
     platformConfigs: importedPlatforms.length,
@@ -67,14 +67,14 @@ function buildImportSummary(parsed: unknown, config: AppConfig): ConfigImportSum
   if (summary.customPlatforms > 0) parts.push(`自定义平台 ${summary.customPlatforms} 个`);
   if (summary.customModels > 0) parts.push(`自定义模型 ${summary.customModels} 个`);
   if (summary.paramOverrides > 0) parts.push(`参数覆盖 ${summary.paramOverrides} 项`);
-  if (summary.systemSettings.length > 0) parts.push(`系统设置（${summary.systemSettings.join('、')}）`);
 
-  const importedText = parts.length > 0 ? parts.join('、') : '未发现可导入的非敏感配置，已保留当前配置';
+  const importedText = parts.length > 0 ? parts.join('、') : '未发现可导入的配置，已保留当前配置';
+  const keptSystemText = summary.systemSettings.length > 0 ? `文件中的系统设置（${summary.systemSettings.join('、')}）已保留本机当前值，未导入。` : '';
   const ignoredText = summary.ignoredSecretFields > 0 ? `已忽略文件中的 ${summary.ignoredSecretFields} 个敏感字段。` : '';
 
   return {
     ...summary,
-    message: `配置已导入：${importedText}。${ignoredText}导入不会恢复 API Key / uploadCk，需要在配置页重新填写。`,
+    message: `配置已导入：${importedText}。${keptSystemText}${ignoredText}导入不会恢复 API Key / uploadCk / Cloudreve ApiKey，需要在配置页重新填写。`,
   };
 }
 
@@ -82,9 +82,25 @@ export function serializeConfigForExport(config: AppConfig): string {
   return JSON.stringify(createSafeExportConfig(config), null, 2);
 }
 
-export function parseImportedConfigText(raw: string, current: AppConfig): ConfigImportResult {
+async function validateDownloadPath(downloadPath: string): Promise<string[]> {
+  if (!downloadPath) return [];
+  if (typeof window === 'undefined' || !window.electronAPI?.checkDir) return [];
+  try {
+    const result = await window.electronAPI.checkDir(downloadPath);
+    if (result.success) return [];
+    if (result.exists && result.error) {
+      return [`自动下载目录「${downloadPath}」不是有效文件夹（${result.error}），自动下载可能失败。`];
+    }
+    return [`自动下载目录「${downloadPath}」在本机不存在或不可访问，建议在配置页重新选择目录，否则视频生成完成后自动下载会报错。`];
+  } catch {
+    return [`自动下载目录「${downloadPath}」无法校验（当前环境不支持），导入后请确认该目录存在。`];
+  }
+}
+
+export async function parseImportedConfigText(raw: string, current: AppConfig): Promise<ConfigImportResult> {
   const parsed = parseJson<unknown | null>(raw, null, isSafeConfigLike);
   if (!parsed) return { ok: false, error: '文件格式错误，请选择有效且安全的 JSON 配置文件' };
   const config = createImportedConfig(parsed, current);
-  return { ok: true, config, summary: buildImportSummary(parsed, config) };
+  const warnings = await validateDownloadPath(config.downloadPath);
+  return { ok: true, config, summary: buildImportSummary(parsed, config), warnings };
 }
