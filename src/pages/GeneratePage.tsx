@@ -1,24 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw, Copy, WifiOff, RefreshCw, Trash2 } from 'lucide-react';
+import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw } from 'lucide-react';
 import AppSelect from '../components/AppSelect';
 import { useConfig } from '../context/useConfig';
 import { useTasks } from '../context/useTasks';
 import { useOfflineQueue } from '../context/useOfflineQueue';
 import type { GenerationMode, VideoGenerationRequest, ParamDef, ParamOption } from '../types';
-import VideoApi from '../services/api';
 import { buildRequestPayload } from '../services/api/payloadBuilders';
-import ImageUploader from '../services/imageUpload';
-import CloudreveUploader from '../services/cloudreveUpload';
-import GeekaiAssetService, { type GeekaiAssetKind } from '../services/geekaiAssets';
-import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import { resolveParam } from '../services/modelConfigManager';
-import { addCustomPrompt, deleteCustomPrompt, loadCustomPrompts, updateCustomPrompt, whenPromptLibraryReady } from '../services/promptLibrary';
-import type { PromptItem } from '../services/promptLibrary';
-import { logger } from '../utils/logger';
-import { containsLocalOnlyImageValue, formatErrorWithAdvice, getTaskVideoUrl, normalizeTaskStatus } from '../context/taskUtils';
-import { isRetryableNetworkError } from '../context/offlineQueueUtils';
-import { validateGenerationInput } from './generate/validation';
-import { MAX_IMAGE_URL_LENGTH, isAssetUrl, normalizeImageUrl, normalizeMediaUrl, validateImageFile, validateMediaFile } from './generate/imageInput';
+import { addCustomPrompt } from '../services/promptLibrary';
+import { containsLocalOnlyImageValue } from '../context/taskUtils';
+import MediaParamField from './generate/MediaParamField';
+import PromptLibraryPanel from './generate/PromptLibraryPanel';
+import OfflineQueueBanner from './generate/OfflineQueueBanner';
+import { useBatchSubmit } from './generate/useBatchSubmit';
 
 type ResolvedParam = ReturnType<typeof resolveParam>;
 type PendingReuseData = { platformId: string; model: string; mode: GenerationMode; prompt: string; paramValues: Record<string, unknown> };
@@ -56,7 +50,6 @@ const getReusableParamValue = (key: string, values: Record<string, unknown>): un
 interface GeneratePageProps { onNavigateToTasks?: () => void; onNavigateToConfig?: () => void }
 const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNavigateToConfig }) => {
   const { activePlatform, runtimePlatforms, setActivePlatformId, appConfig } = useConfig();
-  const activeImageUploadMode = activePlatform?.imageUploadMode ?? appConfig.imageUploadMode ?? 'geekai';
   const { addTask, reuseTaskData, clearReuseTaskData } = useTasks();
   const {
     queue: offlineQueue,
@@ -66,49 +59,20 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     removeOfflineTask,
     retryOfflineTask,
   } = useOfflineQueue();
-  const [offlineActionError, setOfflineActionError] = useState<string>('');
 
   const [mode, setMode] = useState<GenerationMode>('text');
-  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
-  const [assetConvertingKey, setAssetConvertingKey] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [promptList, setPromptList] = useState<string[]>(['']);
   const [generationCount, setGenerationCount] = useState<number>(1);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [copiedAssetUrl, setCopiedAssetUrl] = useState<string | null>(null);
-  const [submitProgress, setSubmitProgress] = useState<string>('');
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [promptLibraryVersion, setPromptLibraryVersion] = useState(0);
   const [showParams, setShowParams] = useState(true);
   const [showRequestPreview, setShowRequestPreview] = useState(false);
-  const [promptLibraryCategory, setPromptLibraryCategory] = useState<string>('全部');
-  const [promptSearch, setPromptSearch] = useState('');
-  const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
-  const [editPromptCategory, setEditPromptCategory] = useState('');
-  const [editPromptText, setEditPromptText] = useState('');
-  const [promptLibrary, setPromptLibrary] = useState<PromptItem[]>(() => loadCustomPrompts());
-  // 启动竞态修复：文件恢复完成前挂载时，本次会话也要看到恢复后的词库
-  useEffect(() => {
-    let cancelled = false;
-    void whenPromptLibraryReady().then(() => {
-      if (!cancelled) setPromptLibrary(loadCustomPrompts());
-    });
-    return () => { cancelled = true; };
-  }, []);
   const [pendingReuseData, setPendingReuseData] = useState<PendingReuseData | null>(null);
-  const stopGenerateRef = useRef(false);
   const promptSectionRef = useRef<HTMLDivElement | null>(null);
   const generationControlColumnRef = useRef<HTMLDivElement | null>(null);
-  const [promptLibraryLayout, setPromptLibraryLayout] = useState<{ panelStyle: React.CSSProperties; listMaxHeight: number }>({
-    panelStyle: {
-      position: 'sticky',
-      top: 24,
-      width: '100%',
-      maxHeight: '78vh',
-    },
-    listMaxHeight: 320,
-  });
 
   // 参数值 state：key = ParamDef.key, value = 用户当前选的值
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
@@ -218,57 +182,13 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     return resolvedParams.filter(({ def }) => isParamVisible(def));
   }, [isParamVisible, resolvedParams]);
 
-  const updatePromptLibraryLayout = useCallback(() => {
-    if (!showPromptLibrary || typeof window === 'undefined') return;
-
-    const scrollViewportRect = promptSectionRef.current?.closest('.app-main')?.getBoundingClientRect();
-    const stickyOffset = 24;
-    const viewportTop = scrollViewportRect?.top ?? 0;
-    const viewportBottom = scrollViewportRect?.bottom ?? window.innerHeight;
-    const availableHeight = viewportBottom - viewportTop - stickyOffset - 16;
-    const maxHeight = Math.max(260, Math.min(availableHeight, window.innerHeight * 0.78));
-    const listMaxHeight = Math.max(140, maxHeight - 178);
-
-    setPromptLibraryLayout(prev => {
-      const current = prev.panelStyle;
-      if (
-        current.position === 'sticky' &&
-        current.top === stickyOffset &&
-        current.width === '100%' &&
-        current.maxHeight === maxHeight &&
-        prev.listMaxHeight === listMaxHeight
-      ) {
-        return prev;
-      }
-      return {
-        panelStyle: {
-          position: 'sticky',
-          top: stickyOffset,
-          width: '100%',
-          maxHeight,
-        },
-        listMaxHeight,
-      };
-    });
-  }, [showPromptLibrary]);
-
-  useEffect(() => {
-    if (!showPromptLibrary) return;
-
-    updatePromptLibraryLayout();
-    window.addEventListener('resize', updatePromptLibraryLayout);
-    return () => {
-      window.removeEventListener('resize', updatePromptLibraryLayout);
-    };
-  }, [showPromptLibrary, updatePromptLibraryLayout, promptList.length, promptLibrary.length, editingPromptId, promptSearch, promptLibraryCategory]);
-
   const validPromptCount = useMemo(() => promptList.filter(p => p.trim()).length, [promptList]);
   const totalSubmitCount = validPromptCount * generationCount;
   const hasNoPlatform = !activePlatform;
   const hasApiKey = Boolean(activePlatform?.apiKey);
   const hasModelSelection = selectedModelId.trim().length > 0;
   const noSupportedModelForMode = Boolean(activePlatform && activePlatform.models.length > 0 && supportedModels.length === 0);
-  const canGenerate = hasApiKey && hasModelSelection && !noSupportedModelForMode && !isGenerating && totalSubmitCount > 0;
+  const canGenerate = hasApiKey && hasModelSelection && !noSupportedModelForMode && totalSubmitCount > 0;
   const supportsGeekaiAsset = Boolean(activePlatform?.apiKey && activePlatform.baseUrl.includes('geekai.co'));
 
   const isMediaParam = (def: ParamDef) => def.type === 'image' || def.type === 'image-multi' || def.type === 'video' || def.type === 'video-multi' || def.type === 'audio' || def.type === 'audio-multi';
@@ -281,32 +201,12 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     setParamValues(prev => ({ ...prev, [key]: value }));
   };
 
-  const showUrlSuffixHint = () => {
-    setSuccessMessage('已添加图片 URL。未识别常见图片后缀，如签名 URL 无法生成，请确认该地址可公开访问。');
-    setTimeout(() => setSuccessMessage(''), 5000);
-  };
-
-  const handleStopGenerate = () => {
-    stopGenerateRef.current = true;
-    setSuccessMessage('正在停止继续提交，已提交的任务会保留在任务列表中');
-  };
-
   const handleModeChange = (newMode: GenerationMode) => {
     setMode(newMode);
     const defaultModel = activePlatform?.models.find(m => m.id === activePlatform.defaultModel && m.modes.includes(newMode));
     const first = activePlatform?.models.find(m => m.modes.includes(newMode));
     if (defaultModel || first) setSelectedModelId((defaultModel ?? first)?.id ?? '');
   };
-
-  const promptCategories = ['全部', ...Array.from(new Set(promptLibrary.map(p => p.category)))];
-  const filteredPrompts = useMemo(() => {
-    let list = promptLibraryCategory === '全部' ? promptLibrary : promptLibrary.filter(p => p.category === promptLibraryCategory);
-    if (promptSearch.trim()) {
-      const q = promptSearch.toLowerCase();
-      list = list.filter(p => p.text.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
-    }
-    return list;
-  }, [promptLibraryCategory, promptSearch, promptLibrary]);
 
   const handleInsertPrompt = (text: string) => {
     const emptyIndex = promptList.findIndex(p => p.trim() === '');
@@ -333,27 +233,10 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
       return;
     }
     addCustomPrompt('我的提示词', currentPrompt);
-    setPromptLibrary(loadCustomPrompts());
-    setPromptLibraryCategory('全部');
+    setPromptLibraryVersion(v => v + 1);
     setShowPromptLibrary(true);
     setSuccessMessage(`已保存 Prompt ${promptIndex + 1} 到个人词库，可在词库中编辑分类`);
     setTimeout(() => setSuccessMessage(''), 3000);
-  };
-  const handleStartEdit = (p: PromptItem) => {
-    setEditingPromptId(p.id);
-    setEditPromptCategory(p.category);
-    setEditPromptText(p.text);
-  };
-  const handleSaveEdit = () => {
-    if (editingPromptId) {
-      updateCustomPrompt(editingPromptId, { category: editPromptCategory, text: editPromptText });
-      setPromptLibrary(loadCustomPrompts());
-    }
-    setEditingPromptId(null);
-  };
-  const handleDeletePrompt = (id: string) => {
-    deleteCustomPrompt(id);
-    setPromptLibrary(loadCustomPrompts());
   };
 
   const buildRequest = (): VideoGenerationRequest => {
@@ -386,6 +269,25 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     return req;
   };
 
+  const { isGenerating, submitProgress, handleGenerate, handleStopGenerate } = useBatchSubmit({
+    activePlatform,
+    selectedModelId,
+    selectedModel,
+    supportedModels,
+    mode,
+    generationCount,
+    promptList,
+    imageParams,
+    mediaParams,
+    paramValues,
+    buildRequest,
+    appConfig,
+    addTask,
+    enqueueOfflineTask,
+    onError: setError,
+    onSuccess: setSuccessMessage,
+  });
+
   const requestPreviewJson = useMemo(() => {
     if (!activePlatform) {
       return JSON.stringify({ message: '请先配置并选择平台' }, null, 2);
@@ -399,255 +301,9 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
       : payload;
 
     return JSON.stringify(body, null, 2);
+    // buildRequest 每次渲染重建，纳入依赖会使 memo 失效；下列依赖已覆盖其全部输入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePlatform, promptList, selectedModelId, visibleParams, resolvedParams, paramValues]);
-
-  const handleGenerate = async () => {
-    stopGenerateRef.current = false;
-    const validPrompts = promptList.filter(p => p.trim());
-    const validationError = validateGenerationInput({
-      activePlatform,
-      selectedModelId,
-      selectedModel,
-      supportedModels,
-      mode,
-      validPrompts,
-      generationCount,
-      imageParams,
-      mediaParams,
-      paramValues,
-    });
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setIsGenerating(true);
-    setError('');
-    setSuccessMessage('');
-    setSubmitProgress(`正在提交 0/${totalSubmitCount}`);
-    const api = new VideoApi(activePlatform);
-    let succeedCount = 0;
-    let submittedCount = 0;
-    let queuedCount = 0;
-    const lastErrors: string[] = [];
-
-    for (const prompt of validPrompts) {
-      for (let i = 0; i < generationCount; i++) {
-        if (stopGenerateRef.current) break;
-        submittedCount++;
-        setSubmitProgress(`正在提交 ${submittedCount}/${totalSubmitCount}`);
-        const request = { ...buildRequest(), prompt: prompt.trim() };
-        try {
-          const response = await api.generateVideo(request);
-          // 保存完整参数快照（排除 prompt，单独存）
-          const paramsSnapshot: Record<string, unknown> = { ...request };
-          delete paramsSnapshot.prompt;
-          addTask({
-            id: response.task_id,
-            platformId: activePlatform?.id,
-            prompt: prompt.trim(),
-            model: selectedModelId,
-            mode,
-            count: generationCount,
-            image_url: Array.isArray(request.image) ? request.image[0] : (typeof request.image === 'string' ? request.image : undefined),
-            image_tail_url: request.image_tail,
-            image_urls: Array.isArray(request.image) ? request.image : (Array.isArray(request.images) ? request.images : undefined),
-            video_urls: Array.isArray(request.video) ? request.video : (typeof request.video === 'string' ? [request.video] : undefined),
-            audio_urls: Array.isArray(request.audio) ? request.audio : (typeof request.audio === 'string' ? [request.audio] : undefined),
-            status: normalizeTaskStatus(response.task_status),
-            raw_status: response.task_status,
-            video_url: getTaskVideoUrl(response, activePlatform),
-            auto_download: Boolean(appConfig.autoDownload && appConfig.downloadPath),
-            downloaded: false,
-            download_status: appConfig.autoDownload && appConfig.downloadPath ? 'waiting' : undefined,
-            download_path: appConfig.autoDownload && appConfig.downloadPath ? appConfig.downloadPath : undefined,
-            saved_params: paramsSnapshot,
-          });
-          succeedCount++;
-        } catch (err) {
-          const msg = getApiSafeMessage(err, '视频生成请求失败');
-          // 网络类异常（断网/连接超时等）不算最终失败，转入离线队列，网络恢复后自动重新提交
-          if (isRetryableNetworkError(err, msg)) {
-            enqueueOfflineTask({
-              platformId: activePlatform?.id,
-              model: selectedModelId,
-              mode,
-              prompt: prompt.trim(),
-              request,
-              count: generationCount,
-              autoDownload: appConfig.autoDownload,
-              downloadPath: appConfig.downloadPath,
-            });
-            queuedCount++;
-          } else {
-            lastErrors.push(formatErrorWithAdvice(msg, '检查参数后重试'));
-          }
-          logger.error('GeneratePage', '提交任务失败', err);
-        }
-      }
-    }
-
-    setIsGenerating(false);
-    setSubmitProgress('');
-    if (succeedCount > 0 || queuedCount > 0) {
-      const parts: string[] = [];
-      if (succeedCount > 0) parts.push(`成功提交 ${succeedCount} 个`);
-      if (queuedCount > 0) parts.push(`${queuedCount} 个因网络异常已加入离线队列，网络恢复后自动提交`);
-      setSuccessMessage(`${stopGenerateRef.current ? '已停止继续提交。' : ''}${parts.join('，')}`);
-      setTimeout(() => setSuccessMessage(''), queuedCount > 0 ? 8000 : 5000);
-    }
-    if (lastErrors.length > 0) {
-      const failedCount = lastErrors.length;
-      const summary = lastErrors.slice(-3).join('；');
-      const stoppedHint = stopGenerateRef.current ? '，剩余任务已停止提交' : '';
-      setError(`批量提交完成：成功 ${succeedCount} 个，失败 ${failedCount} 个${stoppedHint}。最近失败：${summary}${failedCount > 3 ? '；更多失败请检查参数或稍后重试' : ''}`);
-    }
-  };
-
-  // ─── 渲染图片上传控件 ──────────────────────────────────────
-  // ImageUploader 是 class（非 React 组件），这里包成上传 handler
-  const uploadImage = async (file: File, _paramKey?: string): Promise<string | null> => {
-    const fileError = validateImageFile(file);
-    if (fileError) {
-      setError(fileError);
-      return null;
-    }
-    const mode = activeImageUploadMode;
-    if (mode === 'base64') {
-      return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = e => resolve((e.target?.result as string) ?? null);
-        reader.onerror = () => {
-          logger.warn('GeneratePage', '读取图片文件失败', reader.error);
-          setError('读取图片文件失败，文件可能已被移动或无访问权限，请重试');
-          resolve(null);
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-    if (mode === 'cloudreve') {
-      if (!appConfig.cloudreveApiKey.trim()) {
-        setError('当前平台图片上传方式为 Cloudreve，但还没有填写 Cloudreve ApiKey。为避免调用存储接口，请到配置页填写 ApiKey，或将当前平台的图传方式改为 Base64 / 仅 URL。');
-        return null;
-      }
-      if (_paramKey) setUploadingKey(_paramKey);
-      const uploader = new CloudreveUploader({
-        apiKey: appConfig.cloudreveApiKey,
-        baseUrl: appConfig.cloudreveBaseUrl,
-        tokenServer: appConfig.cloudreveTokenServer,
-        remoteDir: appConfig.cloudreveRemoteDir,
-      });
-      try {
-        const result = await uploader.uploadImage(file);
-        return result ?? null;
-      } catch (err) {
-        logger.warn('GeneratePage', 'Cloudreve 图片上传失败', err);
-        const detail = getApiSafeMessage(err, '服务未返回可用图片地址');
-        setError(`图片上传失败：${formatErrorWithAdvice(detail, '重新上传图片')}。也可粘贴可公开访问的图片 URL。`);
-        return null;
-      } finally {
-        if (_paramKey) setUploadingKey(null);
-      }
-    }
-    if (!appConfig.uploadCk.trim()) {
-      setError('当前平台图片上传方式为 GeekAI CDN，但还没有填写上传 Cookie（ck）。为避免调用存储接口，请到配置页填写 ck，或将当前平台的图传方式改为 Base64 / 仅 URL。');
-      return null;
-    }
-    if (_paramKey) setUploadingKey(_paramKey);
-    const uploader = new ImageUploader(
-      appConfig.uploadCk,
-      activePlatform?.imageUploadConfig ?? {},
-    );
-    try {
-      const result = await uploader.uploadImage(file);
-      return result?.url ?? null;
-    } catch (err) {
-      logger.warn('GeneratePage', '图片上传失败', err);
-      const detail = getApiSafeMessage(err, '服务未返回可用图片地址');
-      setError(`图片上传失败：${formatErrorWithAdvice(detail, '重新上传图片')}。也可粘贴可公开访问的图片 URL。`);
-      return null;
-    } finally {
-      if (_paramKey) setUploadingKey(null);
-    }
-  };
-
-  const getParamLabel = (key: string) => visibleParams.find(({ def }) => def.key === key)?.def.label ?? key;
-
-  const shortenAssetUrl = (assetUrl: string) => assetUrl.length > 30 ? `${assetUrl.slice(0, 18)}...${assetUrl.slice(-8)}` : assetUrl;
-
-  const copyAssetUrl = async (assetUrl: string) => {
-    try {
-      if (!navigator.clipboard) throw new Error('当前环境不支持剪贴板写入');
-      await navigator.clipboard.writeText(assetUrl);
-      setCopiedAssetUrl(assetUrl);
-      setSuccessMessage(`已复制素材链接：${assetUrl}`);
-      setTimeout(() => setCopiedAssetUrl(null), 2000);
-    } catch (err) {
-      logger.warn('GeneratePage', '复制素材链接失败', err);
-      setError('复制失败，请手动选中 asset:// 链接复制。');
-    }
-  };
-
-  const getCachedGeekaiAssetByAssetUrl = (assetUrl: string, kind?: GeekaiAssetKind) => {
-    if (!activePlatform || !supportsGeekaiAsset) return null;
-    return new GeekaiAssetService(activePlatform).getCachedAssetByAssetUrl(assetUrl, kind);
-  };
-
-  const renderAssetInfo = (assetUrl: string) => (
-    <div className="mt-1 flex max-w-full items-center gap-1 rounded bg-purple-50 px-1.5 py-1 text-[11px] text-purple-700" title={assetUrl}>
-      <span className="min-w-0 flex-1 truncate font-mono">{shortenAssetUrl(assetUrl)}</span>
-      <button
-        type="button"
-        onClick={() => copyAssetUrl(assetUrl)}
-        className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-medium hover:bg-purple-100"
-      >
-        <Copy className="h-3 w-3" />
-        {copiedAssetUrl === assetUrl ? '已复制' : '复制'}
-      </button>
-    </div>
-  );
-
-  const handleConvertToGeekaiAsset = async (
-    paramKey: string,
-    currentUrl: string,
-    kind: GeekaiAssetKind,
-    applyAssetUrl: (assetUrl: string) => void,
-    itemKey = paramKey,
-  ) => {
-    if (!activePlatform) {
-      setError('请先选择极客平台并配置 API Key。');
-      return;
-    }
-    if (!supportsGeekaiAsset) {
-      setError('当前平台不支持极客自定义素材接口，请切换到 GeekAI / 极客智坊平台。');
-      return;
-    }
-    if (isAssetUrl(currentUrl)) {
-      setSuccessMessage('当前素材已经是 asset:// 格式，无需重复转换。');
-      return;
-    }
-    if (currentUrl.startsWith('data:')) {
-      setError('极客素材接口需要可公开访问的图片/视频 URL。请先上传图片获取 URL，或粘贴公开视频 URL 后再转素材。');
-      return;
-    }
-
-    setAssetConvertingKey(itemKey);
-    setError('');
-    try {
-      const service = new GeekaiAssetService(activePlatform);
-      const cachedAsset = service.getCachedAsset(currentUrl, kind);
-      const assetUrl = cachedAsset?.assetUrl ?? await service.createAssetFromUrl(currentUrl, kind, `${getParamLabel(paramKey)}-${Date.now()}`);
-      applyAssetUrl(assetUrl);
-      setSuccessMessage(`${cachedAsset ? '已复用本地素材缓存' : '已转换为极客自定义素材'}：${assetUrl}`);
-      setTimeout(() => setSuccessMessage(''), 6000);
-    } catch (err) {
-      logger.warn('GeneratePage', '转极客素材失败', err);
-      const detail = getApiSafeMessage(err, '素材接口未返回可用素材 ID');
-      setError(`转极客素材失败：${formatErrorWithAdvice(detail, '确认 URL 可公开访问，或稍后重试')}`);
-    } finally {
-      setAssetConvertingKey(null);
-    }
-  };
 
   const getGenerateBlockerHint = (): string | null => {
     if (hasNoPlatform) return '请先在配置页新增或启用平台，再填写 API Key。';
@@ -659,312 +315,6 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
   };
 
   const generateBlockerHint = getGenerateBlockerHint();
-
-  const uploadMediaFile = async (file: File, kind: 'video' | 'audio', paramKey: string): Promise<string | null> => {
-    const fileError = validateMediaFile(file, kind);
-    if (fileError) {
-      setError(fileError);
-      return null;
-    }
-
-    if (!appConfig.uploadCk.trim()) {
-      setError('当前平台需要上传视频/音频到 GeekAI CDN，但还没有填写上传 Cookie（ck）。已停止上传且不会调用存储接口；请到配置页填写 ck，或直接粘贴公开 URL。');
-      return null;
-    }
-
-    const itemKey = `${paramKey}:upload`;
-    setUploadingKey(itemKey);
-    setError('');
-    const uploader = new ImageUploader(
-      appConfig.uploadCk,
-      activePlatform?.imageUploadConfig ?? {},
-    );
-
-    try {
-      const result = await uploader.uploadFile(file, kind);
-      return result?.url ?? null;
-    } catch (err) {
-      logger.warn('GeneratePage', `${kind === 'video' ? '视频' : '音频'}上传失败`, err);
-      const detail = getApiSafeMessage(err, '服务未返回可用附件地址');
-      setError(`${kind === 'video' ? '视频' : '音频'}上传失败：${formatErrorWithAdvice(detail, '重新上传文件，或粘贴可公开访问的 URL')}`);
-      return null;
-    } finally {
-      setUploadingKey(null);
-    }
-  };
-
-  const renderImagePreview = (url: string, className: string) => {
-    if (isAssetUrl(url)) {
-      const cachedAsset = getCachedGeekaiAssetByAssetUrl(url, 'image');
-      if (cachedAsset?.sourceUrl && !cachedAsset.sourceUrl.startsWith('data:')) {
-        return (
-          <div className="relative" title={`${url}\n来源：${cachedAsset.sourceUrl}`}>
-            <img src={cachedAsset.sourceUrl} className={className} alt="" />
-            <span className="absolute left-1 top-1 rounded bg-purple-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm">
-              已转素材
-            </span>
-          </div>
-        );
-      }
-      return (
-        <div className={`${className} flex items-center justify-center rounded border bg-purple-50 px-2 text-center text-[11px] font-medium text-purple-700`} title={url}>
-          已转素材
-        </div>
-      );
-    }
-    return <img src={url} className={className} alt="" />;
-  };
-
-  const renderImageParam = (def: ParamDef) => {
-    const isUploading = uploadingKey === def.key;
-    const uploadMode = activeImageUploadMode;
-
-    if (def.type === 'image-multi') {
-      const urls: string[] = (paramValues[def.key] as string[]) ?? [];
-      const limits = def.imageLimits;
-      return (
-        <div key={def.key} className="space-y-2">
-          <div className="flex items-center gap-2">
-            <label className="block text-sm font-medium text-gray-700">{def.label}</label>
-            {supportsGeekaiAsset && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">可转极客素材</span>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {urls.map((url, idx) => (
-              <div key={idx} className="relative w-24 rounded border bg-white p-1 shadow-sm">
-                {renderImagePreview(url, 'h-20 w-full object-cover rounded')}
-                <button
-                  onClick={() => handleParamChange(def.key, urls.filter((_, i) => i !== idx))}
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-                {supportsGeekaiAsset && !isAssetUrl(url) && !url.startsWith('data:') && (
-                  <button
-                    type="button"
-                    onClick={() => handleConvertToGeekaiAsset(def.key, url, 'image', (assetUrl: string) => handleParamChange(def.key, urls.map((item, i) => i === idx ? assetUrl : item)), `${def.key}:${idx}`)}
-                    disabled={assetConvertingKey === `${def.key}:${idx}`}
-                    className="mt-1 flex w-full items-center justify-center gap-1 rounded bg-purple-600 px-1.5 py-1 text-[11px] font-medium text-white hover:bg-purple-700 disabled:opacity-60"
-                    title="调用极客自定义素材接口，将该图片 URL 转为 asset://素材ID"
-                  >
-                    {assetConvertingKey === `${def.key}:${idx}` ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                    转素材
-                  </button>
-                )}
-              </div>
-            ))}
-            {uploadMode !== 'url' && (!limits?.max || urls.length < limits.max) && (
-              <label className={`w-20 h-20 border-2 border-dashed rounded flex flex-col items-center justify-center cursor-pointer ${
-                isUploading ? 'border-blue-300 bg-blue-50 text-blue-400' : 'border-gray-300 hover:border-blue-400 text-gray-400'
-              }`}>
-                {isUploading
-                  ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : <><Plus className="w-5 h-5" /><span className="text-xs mt-1">上传</span></>}
-                <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={async e => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  const url = await uploadImage(f, def.key);
-                  if (url) handleParamChange(def.key, [...urls, url]);
-                  e.target.value = '';
-                }} />
-              </label>
-            )}
-          </div>
-
-          <p className="text-xs text-gray-400">
-            支持上传或粘贴 http(s) 图片 URL / asset://素材ID 后按 Enter 添加；CDN/OSS/COS 签名 URL 无需图片后缀。
-            {limits?.max ? ` 最多 ${limits.max} 张。` : ''}
-          </p>
-          <input
-            type="text"
-            placeholder={`粘贴图片 URL 或 asset://素材ID 后按回车添加${limits?.max ? `（最多${limits.max}张）` : ''}...`}
-            className="w-full min-h-10 rounded-lg border border-gray-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-blue-100"
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                const input = e.target as HTMLInputElement;
-                const val = normalizeImageUrl(input.value);
-                if (!val) {
-                  setError(`请输入非空的 http(s) 图片 URL，长度不超过 ${MAX_IMAGE_URL_LENGTH} 个字符`);
-                  return;
-                }
-                if (!limits?.max || urls.length < limits.max) {
-                  handleParamChange(def.key, [...urls, val.url]);
-                  if (!val.hasCommonImageExt) showUrlSuffixHint();
-                  input.value = '';
-                }
-              }
-            }}
-          />
-          {isUploading && <p className="text-xs text-blue-500">上传中...</p>}
-        </div>
-      );
-    }
-
-    const url = paramValues[def.key] as string | undefined;
-    return (
-      <div key={def.key} className="space-y-2">
-        <div className="flex items-center gap-2">
-          <label className="block text-sm font-medium text-gray-700">{def.label}</label>
-          {supportsGeekaiAsset && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">可转极客素材</span>}
-        </div>
-        {url ? (
-          <div className="inline-flex flex-col gap-1 rounded border bg-white p-1 shadow-sm">
-            <div className="relative">
-              {renderImagePreview(url, 'w-32 h-20 object-cover rounded')}
-              <button
-                onClick={() => handleParamChange(def.key, undefined)}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-            {isAssetUrl(url) && renderAssetInfo(url)}
-            {supportsGeekaiAsset && !isAssetUrl(url) && !url.startsWith('data:') && (
-              <button
-                type="button"
-                onClick={() => handleConvertToGeekaiAsset(def.key, url, 'image', (assetUrl: string) => handleParamChange(def.key, assetUrl))}
-                disabled={assetConvertingKey === def.key}
-                className="inline-flex min-h-7 items-center justify-center gap-1 rounded bg-purple-600 px-2 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-60"
-                title="调用极客自定义素材接口，将该图片 URL 转为 asset://素材ID"
-              >
-                {assetConvertingKey === def.key ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                转极客素材
-              </button>
-            )}
-          </div>
-        ) : uploadMode !== 'url' ? (
-          <label className={`w-32 h-20 border-2 border-dashed rounded flex flex-col items-center justify-center cursor-pointer ${
-            isUploading ? 'border-blue-300 bg-blue-50 text-blue-400' : 'border-gray-300 hover:border-blue-400 text-gray-400'
-          }`}>
-            {isUploading
-              ? <><Loader2 className="w-5 h-5 animate-spin" /><span className="text-xs mt-1">上传中</span></>
-              : <><Plus className="w-6 h-6" /><span className="text-xs mt-1">上传图片</span></>}
-            <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={async e => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              const u = await uploadImage(f, def.key);
-              if (u) handleParamChange(def.key, u);
-              e.target.value = '';
-            }} />
-          </label>
-        ) : null}
-        <input type="text" placeholder="粘贴图片 URL 或 asset://素材ID 后按回车..."
-          className="w-full min-h-10 rounded-lg border border-gray-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-blue-100"
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              const input = e.target as HTMLInputElement;
-              const val = normalizeImageUrl(input.value);
-              if (!val) {
-                setError(`请输入非空的 http(s) 图片 URL，长度不超过 ${MAX_IMAGE_URL_LENGTH} 个字符`);
-                return;
-              }
-              handleParamChange(def.key, val.url);
-              if (!val.hasCommonImageExt) showUrlSuffixHint();
-              input.value = '';
-            }
-          }} />
-        {isUploading && <p className="text-xs text-blue-500">上传中...</p>}
-      </div>
-    );
-  };
-
-  const renderVideoAudioParam = (def: ParamDef) => {
-    const isMulti = def.type === 'video-multi' || def.type === 'audio-multi';
-    const mediaKind = def.type === 'video' || def.type === 'video-multi' ? 'video' : 'audio';
-    const accept = mediaKind === 'video' ? 'video/*' : 'audio/*';
-    const mediaName = mediaKind === 'video' ? '视频' : '音频';
-    const limits = def.imageLimits;
-    const values = isMulti
-      ? ((paramValues[def.key] as string[] | undefined) ?? [])
-      : (typeof paramValues[def.key] === 'string' && paramValues[def.key] ? [paramValues[def.key] as string] : []);
-    const updateValues = (next: string[]) => handleParamChange(def.key, isMulti ? next : next[0]);
-    const isUploadingMedia = uploadingKey === `${def.key}:upload`;
-
-    return (
-      <div key={def.key} className="space-y-2 min-w-64 flex-1">
-        <div className="flex items-center gap-2">
-          <label className="block text-sm font-medium text-gray-700">{def.label}</label>
-          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">需 ck 上传获取URL</span>
-          {mediaKind === 'video' && supportsGeekaiAsset && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">可转极客素材</span>}
-        </div>
-        {values.length > 0 && (
-          <div className="space-y-2">
-            {values.map((url, idx) => (
-              <div key={`${url}-${idx}`} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                <span className="min-w-0 flex-1 truncate" title={url}>{url.startsWith('data:') ? `${mediaName}文件（Data URL）` : url}</span>
-                {mediaKind === 'video' && supportsGeekaiAsset && !isAssetUrl(url) && !url.startsWith('data:') && (
-                  <button
-                    type="button"
-                    onClick={() => handleConvertToGeekaiAsset(def.key, url, 'video', (assetUrl: string) => updateValues(values.map((item, i) => i === idx ? assetUrl : item)), `${def.key}:${idx}`)}
-                    disabled={assetConvertingKey === `${def.key}:${idx}`}
-                    className="inline-flex min-h-7 items-center gap-1 rounded bg-purple-50 px-2 font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-60"
-                    title="调用极客自定义素材接口，将该视频 URL 转为 asset://素材ID"
-                  >
-                    {assetConvertingKey === `${def.key}:${idx}` ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                    转素材
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => updateValues(values.filter((_, i) => i !== idx))}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-600"
-                  title={`移除该${mediaName}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {(!limits?.max || values.length < limits.max) && (
-          <div className="flex flex-wrap gap-2">
-            <label className={`inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm ${
-              isUploadingMedia ? 'border-blue-300 bg-blue-50 text-blue-500' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600'
-            }`}>
-              {isUploadingMedia ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              <span>{isUploadingMedia ? `上传${mediaName}中` : `上传${mediaName}获取URL`}</span>
-              <input type="file" accept={accept} className="hidden" disabled={isUploadingMedia} onChange={async e => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const uploadedUrl = await uploadMediaFile(file, mediaKind, def.key);
-                if (uploadedUrl) updateValues([...values, uploadedUrl]);
-                e.target.value = '';
-              }} />
-            </label>
-          </div>
-        )}
-        <input
-          type="text"
-          placeholder={`粘贴 http(s) ${mediaName} URL 或 asset://素材ID 后按回车添加${limits?.max ? `（最多${limits.max}个）` : ''}...`}
-          className="w-full min-h-10 rounded-lg border border-gray-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-blue-100"
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              const input = e.target as HTMLInputElement;
-              const val = normalizeMediaUrl(input.value);
-              if (!val) {
-                setError(`请输入非空的 http(s) ${mediaName} URL。`);
-                return;
-              }
-              if (!limits?.max || values.length < limits.max) {
-                updateValues([...values, val]);
-                input.value = '';
-              }
-            }
-          }}
-        />
-        <p className="text-xs text-gray-400">
-          支持粘贴公开 URL 或 asset://素材ID；本地视频/音频会复用 GeekAI 附件上传流程，上传到 COS 后写入可公开访问 URL。
-          {mediaKind === 'video' && supportsGeekaiAsset ? ' 视频 URL 添加后可点击“转素材”生成 asset://素材ID。' : ''}
-          {limits?.max ? ` 最多 ${limits.max} 个。` : ''}
-        </p>
-      </div>
-    );
-  };
-
-  const renderMediaParam = (def: ParamDef) => {
-    if (def.type === 'image' || def.type === 'image-multi') return renderImageParam(def);
-    if (def.type === 'video' || def.type === 'video-multi' || def.type === 'audio' || def.type === 'audio-multi') return renderVideoAudioParam(def);
-    return null;
-  };
 
   // ─── 渲染 select/preset 参数 ──────────────────────────────
   const renderSelectParam = (def: ParamDef, _resolved: ResolvedParam) => {
@@ -1085,55 +435,13 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         </div>
       )}
 
-      {offlineQueue.length > 0 && (
-        <div className="offline-queue-banner">
-          <div className="offline-queue-banner__header">
-            <WifiOff className="w-4 h-4 shrink-0 text-slate-500" />
-            <span className="flex-1">
-              {isOnline
-                ? `网络已恢复，正在自动提交离线队列中的 ${offlineQueue.length} 个任务${offlineProcessing ? '…' : ''}`
-                : `网络异常，${offlineQueue.length} 个任务已暂存离线队列，网络恢复后将自动提交`}
-            </span>
-            {offlineActionError && <span className="text-red-600 text-xs">{offlineActionError}</span>}
-          </div>
-          <div className="offline-queue-banner__list">
-            {offlineQueue.map(item => (
-              <div key={item.id} className="offline-queue-banner__item">
-                <span className="offline-queue-banner__item-text" title={item.prompt}>
-                  [{item.model}] {item.prompt || '（无 Prompt）'}
-                </span>
-                {item.retryCount > 0 && (
-                  <span className="text-[11px] text-amber-600 shrink-0">已重试 {item.retryCount} 次</span>
-                )}
-                <button
-                  type="button"
-                  className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-blue-600 hover:bg-blue-50"
-                  disabled={offlineProcessing}
-                  onClick={async () => {
-                    setOfflineActionError('');
-                    try {
-                      await retryOfflineTask(item.id);
-                    } catch (err) {
-                      setOfflineActionError(getApiSafeMessage(err, '重试提交失败'));
-                    }
-                  }}
-                  title="立即重试提交"
-                >
-                  <RefreshCw className="w-3 h-3" />重试
-                </button>
-                <button
-                  type="button"
-                  className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-50"
-                  onClick={() => removeOfflineTask(item.id)}
-                  title="从离线队列移除，不再自动提交"
-                >
-                  <Trash2 className="w-3 h-3" />移除
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <OfflineQueueBanner
+        queue={offlineQueue}
+        isOnline={isOnline}
+        isProcessing={offlineProcessing}
+        onRetry={retryOfflineTask}
+        onRemove={removeOfflineTask}
+      />
 
       <div className="grid grid-cols-12 gap-4">
         {/* 左栏：模式 + 参数 + Prompt */}
@@ -1203,7 +511,19 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                 {/* 媒体参考参数：根据模型参数动态展示图片/视频/音频 */}
                 {mediaParams.length > 0 && (
                   <div className="mb-4 flex flex-wrap gap-4">
-                    {mediaParams.map(({ def }) => renderMediaParam(def))}
+                    {mediaParams.map(({ def }) => (
+                      <MediaParamField
+                        key={def.key}
+                        def={def}
+                        value={paramValues[def.key]}
+                        onChange={next => handleParamChange(def.key, next)}
+                        appConfig={appConfig}
+                        platform={activePlatform}
+                        supportsGeekaiAsset={supportsGeekaiAsset}
+                        onError={setError}
+                        onSuccess={setSuccessMessage}
+                      />
+                    ))}
                   </div>
                 )}
 
@@ -1399,115 +719,13 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           </div>
 
           {showPromptLibrary && (
-            <div className="prompt-library-panel z-[1000] flex flex-col rounded-xl border border-purple-200 bg-white p-3 shadow-2xl" style={promptLibraryLayout.panelStyle}>
-              <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-purple-900">个人词库</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-gray-500">仅展示你自己保存的提示词，可编辑分类。</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPromptLibrary(false)}
-                  className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-purple-50 hover:text-purple-600 active:bg-purple-100 focus:bg-purple-50"
-                  title="关闭词库"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="mb-3 shrink-0">
-                <input
-                  type="text"
-                  value={promptSearch}
-                  onChange={e => setPromptSearch(e.target.value)}
-                  placeholder="搜索个人提示词..."
-                  className="prompt-library-search w-full min-h-10 rounded-lg border border-purple-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-purple-100"
-                />
-              </div>
-
-              <div className="mb-2 flex shrink-0 flex-wrap gap-1.5">
-                {promptCategories.map(cat => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setPromptLibraryCategory(cat)}
-                    className={`min-h-8 rounded-full border px-3 py-1 text-xs font-medium leading-normal transition-colors focus:outline-none focus:ring-2 focus:ring-purple-100 ${
-                      promptLibraryCategory === cat
-                        ? '!border-purple-600 !bg-purple-600 !text-white hover:!bg-purple-700 active:!bg-purple-800 focus:!bg-purple-600'
-                        : '!border-purple-200 !bg-purple-100 !text-purple-700 hover:!bg-purple-200 active:!bg-purple-200 focus:!bg-purple-100'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              <div className="prompt-library-list min-h-0 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: promptLibraryLayout.listMaxHeight }}>
-                {filteredPrompts.length === 0 ? (
-                  <p className="py-4 text-center text-xs leading-5 text-gray-400">暂无个人提示词。先在左侧填写 Prompt，再点击输入框右侧的“添加词库”。</p>
-                ) : filteredPrompts.map(p => (
-                  <div key={p.id} className="group rounded border border-purple-100 bg-white p-2 transition-colors hover:border-purple-300">
-                    {editingPromptId === p.id ? (
-                      <div className="space-y-1.5">
-                        <input
-                          type="text"
-                          value={editPromptCategory}
-                          onChange={e => setEditPromptCategory(e.target.value)}
-                          className="min-h-10 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm leading-normal focus:outline-none focus:ring-2 focus:ring-purple-100"
-                          placeholder="分类"
-                        />
-                        <textarea
-                          value={editPromptText}
-                          onChange={e => setEditPromptText(e.target.value)}
-                          className="w-full min-h-[88px] rounded-lg border border-gray-200 px-3 py-2 text-sm leading-normal resize-y focus:outline-none focus:ring-2 focus:ring-purple-100"
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => setEditingPromptId(null)} className="min-h-9 rounded-lg px-3 py-2 text-sm leading-normal text-gray-600 hover:bg-gray-100">取消</button>
-                          <button type="button" onClick={handleSaveEdit} className="prompt-library-save min-h-9 rounded-lg border border-purple-600 bg-purple-600 px-3 py-2 text-sm font-medium leading-normal text-white shadow-sm transition-colors hover:bg-purple-700 active:bg-purple-800 focus:outline-none focus:ring-2 focus:ring-purple-200" data-prompt-library-action="save">保存</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex items-start justify-between gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleInsertPrompt(p.text)}
-                            className="prompt-library-item-text flex-1 text-left text-xs leading-relaxed text-gray-700"
-                            style={{ maxHeight: '6.5em', overflowY: 'auto', whiteSpace: 'pre-wrap' }}
-                            title="点击填充到空 Prompt；没有空输入框时自动新增"
-                          >
-                            {p.text}
-                          </button>
-                          <div className="flex flex-shrink-0 items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEdit(p)}
-                              className="rounded-lg border border-amber-200 bg-amber-50 p-1.5 text-amber-600 shadow-sm hover:border-amber-300 hover:bg-amber-100 hover:text-amber-700"
-                              title="编辑提示词"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePrompt(p.id)}
-                              className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-500 shadow-sm hover:border-red-300 hover:bg-red-100 hover:text-red-600"
-                              title="删除提示词"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1">
-                          <span className="rounded bg-purple-50 px-1 text-[10px] text-purple-500">{p.category}</span>
-                          <span className="sr-only">个人提示词</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2 shrink-0 text-center text-[10px] text-gray-400">点击提示词会优先填充空输入框，没有空输入框时自动新增，词库面板会保持打开。</p>
-            </div>
+            <PromptLibraryPanel
+              anchorRef={promptSectionRef}
+              promptCount={promptList.length}
+              refreshVersion={promptLibraryVersion}
+              onInsertPrompt={handleInsertPrompt}
+              onClose={() => setShowPromptLibrary(false)}
+            />
           )}
         </div>
       </div>
