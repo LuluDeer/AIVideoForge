@@ -43,4 +43,29 @@ describe('responseNormalizer', () => {
     expect(result.task_status).toBe('succeed');
     expect(result.video_result?.[0]?.url).toBe('https://example.com/video.mp4');
   });
+
+  it('拒绝非 http(s) 协议的结果 URL（javascript:/data: 防注入）', () => {
+    const result = normalizeResponse({
+      task_id: 't3',
+      task_status: 'succeed',
+      video_result: [
+        { url: 'javascript:alert(1)' },
+        { url: 'data:text/html,<script>alert(1)</script>' },
+        { url: 'https://ok.example.com/v.mp4' },
+      ],
+      last_frame_url: 'javascript:evil()',
+    });
+    expect(result.video_result).toEqual([{ url: 'https://ok.example.com/v.mp4' }]);
+    expect(result.last_frame_url).toBeUndefined();
+  });
+
+  it('collectUrls 路径同样过滤非法协议', () => {
+    const result = normalizeResponse({
+      id: 't4',
+      status: 'succeed',
+      url: 'javascript:alert(1)',
+      video_url: 'file:///C:/windows/system32',
+    });
+    expect(result.video_result).toBeUndefined();
+  });
 });

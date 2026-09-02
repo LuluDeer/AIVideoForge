@@ -1,7 +1,7 @@
 import type { VideoGenerationResponse } from '../../types';
 import { normalizeTaskStatus } from '../../utils/taskStatus';
 import type { UnifiedResponse } from './types';
-import { collectUrls, isPresent } from './utils';
+import { collectUrls, isPresent, isSafeRemoteUrl } from './utils';
 
 const normalizeTimestamp = (value: number | string | undefined): number | undefined => {
   if (!isPresent(value)) return undefined;
@@ -62,14 +62,15 @@ export function normalizeResponse(raw: unknown): VideoGenerationResponse {
     model: response.model || '',
     task_status: taskStatus,
     enhanced_prompt: response.enhanced_prompt,
-    last_frame_url: response.content?.last_frame_url ?? response.last_frame_url,
+    last_frame_url: isSafeRemoteUrl(response.content?.last_frame_url) ? response.content.last_frame_url
+      : isSafeRemoteUrl(response.last_frame_url) ? response.last_frame_url : undefined,
     created_at: normalizeTimestamp(response.created_at),
     error_message: errorMessage,
   };
 
   if (response.task_id) {
     const videoUrls = [
-      ...(response.video_result ?? []),
+      ...(response.video_result ?? []).filter(item => isSafeRemoteUrl(item?.url)),
       ...collectUrls(
         response.video_url,
         response.url,

@@ -243,6 +243,14 @@ export function normalizeTasksForStorage(tasks: unknown[]): Task[] {
   return tasks.map(normalizeTaskForStorage).filter((task): task is Task => !!task).map(sanitizeTaskForStorage);
 }
 
+/** 持久化任务条数上限：按创建时间保留最新的 N 条，防止 localStorage 配额被无限撑大后静默丢写 */
+export const MAX_STORED_TASKS = 500;
+
+export function trimTasksForStorage(tasks: Task[], max: number = MAX_STORED_TASKS): Task[] {
+  if (tasks.length <= max) return tasks;
+  return [...tasks].sort((a, b) => b.created_at - a.created_at).slice(0, max);
+}
+
 export function createNewTask(taskData: Omit<Task, 'created_at' | 'updated_at'>): Task {
   return {
     ...taskData,

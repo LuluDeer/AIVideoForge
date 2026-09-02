@@ -7,6 +7,7 @@ import {
 import { useTasks } from '../context/useTasks';
 import { useConfig } from '../context/useConfig';
 import AppSelect from '../components/AppSelect';
+import AssetAwareImage from '../components/AssetAwareImage';
 import DateRangePicker from '../components/DateRangePicker';
 import { canCancelTask, canDeleteTask, canRetryTask, createTaskStats, getActionableErrorAdvice, formatErrorWithAdvice, getAutoDownloadBadge, getModelStats, getTaskStatusColor, getTaskStatusText, isTaskActive, isTaskRunning, matchesTaskStatusFilter } from '../context/taskUtils';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
@@ -20,7 +21,7 @@ type SortField = 'created_at' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 const TasksPage: React.FC = () => {
-  const { tasks, removeTask, clearTasks, updateTask, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask } = useTasks();
+  const { tasks, removeTask, clearTasks, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask, storageWarning } = useTasks();
   const { runtimePlatforms, activePlatform } = useConfig();
 
   const getPlatformName = (platformId: string): string =>
@@ -48,7 +49,9 @@ const TasksPage: React.FC = () => {
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  // 详情弹窗按 id 从最新 tasks 派生，保证轮询更新后弹窗内容同步刷新，删除任务后弹窗自动关闭
+  const detailTask = useMemo(() => tasks.find(t => t.id === detailTaskId) ?? null, [tasks, detailTaskId]);
   const [batchRetrying, setBatchRetrying] = useState(false);
   const [batchRetryMsg, setBatchRetryMsg] = useState<string | null>(null);
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
@@ -212,7 +215,7 @@ const TasksPage: React.FC = () => {
     );
   };
 
-  const handleDownload = (url: string | undefined, taskId: string) => {
+  const handleDownload = (url: string | undefined) => {
     if (!url) return;
     const link = document.createElement('a');
     link.href = url;
@@ -220,7 +223,8 @@ const TasksPage: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    updateTask(taskId, { downloaded: true });
+    // 不标记 downloaded：跨源 URL 的 download 属性可能被忽略，实际保存结果无法在此确认，
+    // 避免误标导致自动下载/补充下载永久跳过该任务
   };
 
   const handleOpenDownloadTarget = async (task: Task) => {
@@ -366,6 +370,13 @@ const TasksPage: React.FC = () => {
           <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
             <Clock className="w-4 h-4 shrink-0" />
             <span>有 {pausedPollingTasks.length} 个任务自动轮询已暂停，云端状态未知，请手动刷新或同步云端。</span>
+          </div>
+        )}
+
+        {storageWarning && (
+          <div className="mb-4 flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <XCircle className="w-4 h-4 shrink-0" />
+            <span>{storageWarning}</span>
           </div>
         )}
 
@@ -620,7 +631,7 @@ const TasksPage: React.FC = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div
                     className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => setDetailTask(task)}
+                    onClick={() => setDetailTaskId(task.id)}
                     title="点击查看详情"
                   >
                     <p className="task-prompt-summary rounded-lg border px-3 py-2 text-sm text-gray-800 leading-relaxed line-clamp-2">{task.prompt || '(无 Prompt)'}</p>
@@ -644,23 +655,23 @@ const TasksPage: React.FC = () => {
                     {(task.image_url || task.image_tail_url || (task.image_urls && task.image_urls.length > 0)) && (
                       <div className="flex gap-1 mr-1">
                         {task.image_url && !task.image_tail_url &&(
-                          <img src={task.image_url} className="w-14 h-10 object-cover rounded border" alt="首帧" title="首帧图" />
+                          <AssetAwareImage url={task.image_url} platform={getTaskPlatform(task)} className="w-14 h-10 object-cover rounded border" alt="首帧" title="首帧图" />
                         )}
                         {task.image_tail_url && (
                           <>
-                            {task.image_url && <img src={task.image_url} className="w-14 h-10 object-cover rounded border" alt="首帧" title="首帧图" />}
-                            <img src={task.image_tail_url} className="w-14 h-10 object-cover rounded border opacity-80" alt="尾帧" title="尾帧图" />
+                            {task.image_url && <AssetAwareImage url={task.image_url} platform={getTaskPlatform(task)} className="w-14 h-10 object-cover rounded border" alt="首帧" title="首帧图" />}
+                            <AssetAwareImage url={task.image_tail_url} platform={getTaskPlatform(task)} className="w-14 h-10 object-cover rounded border opacity-80" alt="尾帧" title="尾帧图" />
                           </>
                         )}
                         {task.image_urls?.slice(0, 3).map((url, i) => (
-                          <img key={i} src={url} className="w-10 h-10 object-cover rounded border" alt={`参考图${i + 1}`} />
+                          <AssetAwareImage key={i} url={url} platform={getTaskPlatform(task)} className="w-10 h-10 object-cover rounded border" alt={`参考图${i + 1}`} />
                         ))}
                       </div>
                     )}
                     {task.video_url && (
                       <>
                         <button
-                          onClick={() => setDetailTask(task)}
+                          onClick={() => setDetailTaskId(task.id)}
                           className="task-media-action task-media-action--play flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors"
                           title="在详情弹窗中加载并播放视频，避免列表批量加载视频资源"
                         >
@@ -678,7 +689,7 @@ const TasksPage: React.FC = () => {
                           )}
                         </button>
                         <button
-                          onClick={() => handleDownload(task.video_url, task.id)}
+                          onClick={() => handleDownload(task.video_url)}
                           className="task-media-action task-media-action--download p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                           title="下载视频"
                         >
@@ -737,7 +748,7 @@ const TasksPage: React.FC = () => {
       {contextMenu && <div className="context-menu fixed z-[80] min-w-44 rounded-lg border bg-white p-1 shadow-xl" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseLeave={() => setContextMenu(null)}>
         {canRetryTask(contextMenu.task) && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { void handleRetryTask(contextMenu.task.id); setContextMenu(null); }}>重试任务</button>}
         {contextMenu.task.saved_params && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { requestReuseTask(contextMenu.task.id); setContextMenu(null); }}>复用参数</button>}
-        {contextMenu.task.video_url && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { handleDownload(contextMenu.task.video_url, contextMenu.task.id); setContextMenu(null); }}>下载视频</button>}
+        {contextMenu.task.video_url && <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-blue-50" onClick={() => { handleDownload(contextMenu.task.video_url); setContextMenu(null); }}>下载视频</button>}
         {canDeleteTask(contextMenu.task) && <button className="block w-full rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={() => { removeTask(contextMenu.task.id); setContextMenu(null); }}>删除任务</button>}
       </div>}
 
@@ -745,7 +756,7 @@ const TasksPage: React.FC = () => {
       {detailTask && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={() => setDetailTask(null)}
+          onClick={() => setDetailTaskId(null)}
         >
           <div
             className="task-detail-dialog bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
@@ -755,7 +766,7 @@ const TasksPage: React.FC = () => {
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-800">任务详情</h3>
               <button
-                onClick={() => setDetailTask(null)}
+                onClick={() => setDetailTaskId(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
               >
                 <X className="w-5 h-5" />
@@ -897,13 +908,13 @@ const TasksPage: React.FC = () => {
                   <span className="text-sm text-gray-500">参考图片</span>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {detailTask.image_url && (
-                      <img src={detailTask.image_url} className="w-24 h-24 object-cover rounded border" alt="首帧" title="首帧" />
+                      <AssetAwareImage url={detailTask.image_url} platform={getTaskPlatform(detailTask)} className="w-24 h-24 object-cover rounded border" alt="首帧" title="首帧" />
                     )}
                     {detailTask.image_tail_url && (
-                      <img src={detailTask.image_tail_url} className="w-24 h-24 object-cover rounded border" alt="尾帧" title="尾帧" />
+                      <AssetAwareImage url={detailTask.image_tail_url} platform={getTaskPlatform(detailTask)} className="w-24 h-24 object-cover rounded border" alt="尾帧" title="尾帧" />
                     )}
                     {detailTask.image_urls?.map((url, i) => (
-                      <img key={i} src={url} className="w-24 h-24 object-cover rounded border" alt={`参考图${i+1}`} />
+                      <AssetAwareImage key={i} url={url} platform={getTaskPlatform(detailTask)} className="w-24 h-24 object-cover rounded border" alt={`参考图${i+1}`} />
                     ))}
                   </div>
                 </div>
@@ -917,7 +928,7 @@ const TasksPage: React.FC = () => {
                     <video src={detailTask.video_url} controls preload="metadata" className="w-full max-h-64 rounded border bg-black" />
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleDownload(detailTask.video_url, detailTask.id)}
+                        onClick={() => handleDownload(detailTask.video_url)}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
                       >
                         <Download className="w-3.5 h-3.5" /> 下载
@@ -933,7 +944,7 @@ const TasksPage: React.FC = () => {
                         <button
                           onClick={() => {
                             requestReuseTask(detailTask.id);
-                            setDetailTask(null);
+                            setDetailTaskId(null);
                           }}
                           className="flex items-center gap-1 px-3 py-1.5 text-sm text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100"
                         >

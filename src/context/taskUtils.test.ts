@@ -11,6 +11,7 @@ import {
   isLocalOnlyImagePlaceholder,
   normalizeTaskForStorage,
   sanitizeTaskForStorage,
+  trimTasksForStorage,
 } from './taskUtils';
 import type { Task } from '../types';
 
@@ -120,5 +121,13 @@ describe('taskUtils presentation helpers', () => {
     ] as Task[];
     expect(getModelStats(tasks, 'running')).toEqual({ a: 2 });
     expect(getModelStats(tasks, 'failed')).toEqual({ b: 1 });
+  });
+
+  it('trimTasksForStorage keeps the newest tasks within the cap', () => {
+    const tasks = Array.from({ length: 12 }, (_, i) => ({ ...baseTask, id: `t${i}`, created_at: i })) as Task[];
+    const trimmed = trimTasksForStorage(tasks, 5);
+    expect(trimmed.length).toBe(5);
+    expect(trimmed.map(t => t.id)).toEqual(['t11', 't10', 't9', 't8', 't7']);
+    expect(trimTasksForStorage(tasks, 20)).toBe(tasks);
   });
 });

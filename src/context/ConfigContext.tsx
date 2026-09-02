@@ -5,7 +5,7 @@ import { PLATFORM_DEFS, buildDefaultParams } from '../services/modelTemplates';
 import { readJsonStorage, writeJsonStorage } from '../utils/storage';
 import { logger } from '../utils/logger';
 import { DEFAULT_APP_CONFIG, migrateLegacyConfig, normalizeAppConfig } from '../services/configSchema';
-import { encryptAppConfigForStorage } from '../utils/secureStorage';
+import { encryptAppConfigForStorage, decryptAppConfigFromStorage, isEncryptedSecret } from '../utils/secureStorage';
 import { ConfigContext } from './configContextValue';
 import type { ConfigContextType } from './configContextValue';
 
@@ -53,34 +53,71 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    const saved = readJsonStorage<unknown | null>(STORAGE_KEY, null);
-    const legacy = readJsonStorage<unknown | null>('geekai_config', null);
-    if (saved) {
-      setAppConfig(normalizeAppConfig(saved, { current: DEFAULT_APP_CONFIG }));
-    } else if (legacy) {
-      setAppConfig(migrateLegacyConfig(legacy));
-    }
-    setInitialized(true);
+    let cancelled = false;
+    void (async () => {
+      const saved = readJsonStorage<unknown | null>(STORAGE_KEY, null);
+      const legacy = readJsonStorage<unknown | null>('geekai_config', null);
+      let config: AppConfig | null = null;
+      if (saved) {
+        config = normalizeAppConfig(saved, { current: DEFAULT_APP_CONFIG });
+      } else if (legacy) {
+        config = migrateLegacyConfig(legacy);
+      }
+      if (config) {
+        // 落盘时敏感字段以 enc: 密文存储，加载必须解密还原为明文，否则请求会带出密文 Key
+        const secretFields = (value: AppConfig): string[] => [
+          ...value.platforms.map(p => p.apiKey),
+          ...(value.customPlatforms ?? []).map(p => p.apiKey),
+          value.uploadCk,
+          value.cloudreveApiKey,
+        ];
+        const before = secretFields(config);
+        config = await decryptAppConfigFromStorage(config);
+        const after = secretFields(config);
+        const failedCount = before.filter((value, index) => isEncryptedSecret(value) && !after[index]).length;
+        if (failedCount > 0) {
+          logger.warn('ConfigContext', `有 ${failedCount} 个已保存的加密密钥无法解密（可能更换了系统账户或密钥库不可用），请重新填写`);
+        }
+      }
+      if (cancelled) return;
+      if (config) setAppConfig(config);
+      setInitialized(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!initialized) return;
-    const normalized = normalizeAppConfig(appConfig, { current: DEFAULT_APP_CONFIG });
-    const ok = writeJsonStorage(STORAGE_KEY, normalized, error => {
-      logger.warn('ConfigContext', '自动保存配置失败', error);
-    });
-    if (!ok) return;
-    if (window.electronAPI) {
-      void window.electronAPI.setHttpProxyConfig({
-        useSystemProxy: normalized.useSystemProxy,
-        httpProxy: normalized.httpProxy ?? '',
-      }).catch(error => {
-        logger.warn('ConfigContext', '同步代理配置失败', error);
-      });
-    }
-    setSaveSuccess(true);
-    const t = setTimeout(() => setSaveSuccess(false), 2000);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    // 防抖：避免逐字符键入时高频加密与写盘；加密为异步 IPC，完成后需确认仍是最新配置才落盘
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const normalized = normalizeAppConfig(appConfig, { current: DEFAULT_APP_CONFIG });
+        let payload: AppConfig;
+        try {
+          payload = await encryptAppConfigForStorage(normalized);
+        } catch (error) {
+          logger.warn('ConfigContext', '加密配置失败，本次以明文保存', error);
+          payload = normalized;
+        }
+        if (cancelled) return;
+        const ok = writeJsonStorage(STORAGE_KEY, payload, error => {
+          logger.warn('ConfigContext', '自动保存配置失败', error);
+        });
+        if (!ok) return;
+        if (window.electronAPI) {
+          void window.electronAPI.setHttpProxyConfig({
+            useSystemProxy: normalized.useSystemProxy,
+            httpProxy: normalized.httpProxy ?? '',
+          }).catch(error => {
+            logger.warn('ConfigContext', '同步代理配置失败', error);
+          });
+        }
+        setSaveSuccess(true);
+        window.setTimeout(() => setSaveSuccess(false), 2000);
+      })();
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [appConfig, initialized]);
 
   const updateAppConfig = useCallback((updates: Partial<AppConfig>) => {
@@ -156,10 +193,10 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, []);
 
   const updateCustomPlatform = useCallback((id: string, updates: Partial<CustomPlatformDef>) => {
-    setAppConfig(prev => ({
+    setAppConfig(prev => normalizeAppConfig({
       ...prev,
       customPlatforms: (prev.customPlatforms ?? []).map(cp => cp.id === id ? { ...cp, ...updates } : cp),
-    }));
+    }, { current: prev }));
     setSaveSuccess(false);
   }, []);
 
@@ -283,6 +320,16 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const activePlatform = useMemo(() => runtimePlatforms.find(p => p.id === appConfig.activePlatformId) ?? runtimePlatforms[0], [runtimePlatforms, appConfig.activePlatformId]);
 
+  // 开启 webSecurity 后，渲染进程跨源调用平台 API 依赖主进程按域注入 CORS 头；
+  // 把已启用平台的 baseUrl 同步给主进程，自定义中转站域同样纳入注入列表。
+  useEffect(() => {
+    if (!window.electronAPI?.setCorsOrigins) return;
+    const origins = runtimePlatforms.map(p => p.baseUrl).filter(Boolean);
+    void window.electronAPI.setCorsOrigins(origins).catch(error => {
+      logger.warn('ConfigContext', '同步 CORS 域失败', error);
+    });
+  }, [runtimePlatforms]);
+
   const setActivePlatformId = useCallback((id: string) => {
     updateAppConfig({ activePlatformId: id });
   }, [updateAppConfig]);
@@ -296,7 +343,14 @@ export const ConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const ok = writeJsonStorage(STORAGE_KEY, encrypted, error => { storageError = error; });
       if (!ok) throw storageError ?? new Error('localStorage 不可用');
       if (window.electronAPI) {
-        if (normalized.uploadCk) await window.electronAPI.setCookies(normalized.uploadCk);
+        if (normalized.uploadCk) {
+          await window.electronAPI.setCookies(normalized.uploadCk);
+        } else if (window.electronAPI.clearCookies) {
+          // uploadCk 被清空时同步清理 Electron session 中的 GeekAI Cookie，保证登出语义完整
+          await window.electronAPI.clearCookies().catch(error => {
+            logger.warn('ConfigContext', '清理会话 Cookie 失败', error);
+          });
+        }
         await window.electronAPI.setHttpProxyConfig({
           useSystemProxy: normalized.useSystemProxy,
           httpProxy: normalized.httpProxy ?? '',

@@ -4,6 +4,7 @@ import { useConfig } from '../context/useConfig';
 import { PLATFORM_DEFS } from '../services/modelTemplates';
 import { MAX_IMPORT_FILE_SIZE, SAFE_CONFIG_EXPORT_FILENAME, parseImportedConfigText, serializeConfigForExport } from '../services/configImportExport';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
+import { logger } from '../utils/logger';
 import BuiltinPlatformCard from './config/BuiltinPlatformCard';
 import CustomPlatformCard from './config/CustomPlatformCard';
 import { emptyPlatform } from './config/utils';
@@ -125,6 +126,12 @@ const ConfigPage: React.FC = () => {
       platforms: appConfig.platforms.map(platform => ({ ...platform, apiKey: '' })),
       customPlatforms: (appConfig.customPlatforms ?? []).map(platform => ({ ...platform, apiKey: '' })),
     });
+    // 同步清理 Electron session 中已写入的 GeekAI Cookie，保证登出语义完整
+    if (window.electronAPI?.clearCookies) {
+      void window.electronAPI.clearCookies().catch(error => {
+        logger.warn('ConfigPage', '清理会话 Cookie 失败', error);
+      });
+    }
     setImportError('');
     setSaveError('');
     setImportSuccess('已清除本地保存的所有平台 API Key、自定义平台 API Key、uploadCk 和 Cloudreve ApiKey；平台、模型、参数覆盖和任务历史均已保留。');

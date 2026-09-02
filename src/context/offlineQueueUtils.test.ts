@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_OFFLINE_RETRY_COUNT,
   normalizeOfflineQueueForStorage,
   normalizeOfflineQueueItem,
   offlineQueueItemHasLocalOnlyMedia,
   sanitizeOfflineQueueItemForStorage,
   isNetworkErrorMessage,
+  isOfflineQueueRetryExhausted,
+  isRetryableNetworkError,
 } from './offlineQueueUtils';
 import { STORAGE_OMITTED_VALUE } from './taskUtils';
+import { ApiError } from '../services/api/errorNormalizer';
 import type { OfflineQueueItem } from './offlineQueueUtils';
 
 const baseItem: OfflineQueueItem = {
@@ -72,5 +76,25 @@ describe('offlineQueueUtils', () => {
     expect(isNetworkErrorMessage('Failed to fetch')).toBe(true);
     expect(isNetworkErrorMessage('HTTP 401')).toBe(false);
     expect(isNetworkErrorMessage(undefined)).toBe(false);
+  });
+
+  it('recognizes timeout messages (回归：中文“请求超时”曾被漏判)', () => {
+    expect(isNetworkErrorMessage('视频生成请求失败: 请求超时')).toBe(true);
+    expect(isNetworkErrorMessage('timeout of 60000ms exceeded')).toBe(true);
+  });
+
+  it('isRetryableNetworkError prefers ApiError flags over message regex', () => {
+    expect(isRetryableNetworkError(new ApiError('视频生成请求失败: 请求超时', { isTimeout: true }))).toBe(true);
+    expect(isRetryableNetworkError(new ApiError('网络连接异常', { isNetwork: true }))).toBe(true);
+    // 标志明确为非网络类时，即使文案含“网络”也不入队
+    expect(isRetryableNetworkError(new ApiError('网络连接异常', {}))).toBe(false);
+    // 非 ApiError 回退到文案匹配
+    expect(isRetryableNetworkError(new Error('Failed to fetch'), 'Failed to fetch')).toBe(true);
+    expect(isRetryableNetworkError(new Error('bad params'), '参数错误')).toBe(false);
+  });
+
+  it('isOfflineQueueRetryExhausted caps auto retries', () => {
+    expect(isOfflineQueueRetryExhausted({ retryCount: MAX_OFFLINE_RETRY_COUNT - 1 })).toBe(false);
+    expect(isOfflineQueueRetryExhausted({ retryCount: MAX_OFFLINE_RETRY_COUNT })).toBe(true);
   });
 });

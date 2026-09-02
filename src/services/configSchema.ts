@@ -132,6 +132,26 @@ const sanitizeModels = (value: unknown): CustomModelDef[] | undefined => {
   return models.length ? models : undefined;
 };
 
+const sanitizeImageUploadConfig = (value: unknown): UserPlatformConfig['imageUploadConfig'] | undefined => {
+  if (!isRecord(value)) return undefined;
+  const output: Record<string, string> = {};
+  for (const key of ['credentialEndpoint', 'cacheCheckEndpoint', 'recordEndpoint', 'cosBucket', 'storageUrlPrefix', 'siteOrigin'] as const) {
+    const item = optionalStr(value[key]);
+    if (item) output[key] = item;
+  }
+  return Object.keys(output).length ? output : undefined;
+};
+
+const sanitizeAccounts = (value: unknown, includeSecrets: boolean): UserPlatformConfig['accounts'] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const accounts = value.filter(isRecord).map(account => ({
+    id: str(account.id),
+    label: str(account.label),
+    apiKey: includeSecrets ? str(account.apiKey) : '',
+  })).filter(account => account.id);
+  return accounts.length ? accounts : undefined;
+};
+
 function sanitizePlatforms(value: unknown, current: UserPlatformConfig[] = [], includeSecrets: boolean): UserPlatformConfig[] {
   if (!Array.isArray(value)) return current;
   return value.filter(isRecord).map(platform => {
@@ -151,8 +171,11 @@ function sanitizePlatforms(value: unknown, current: UserPlatformConfig[] = [], i
       endpoints,
       paramOverrides: sanitizeOverrides(platform.paramOverrides),
       imageUploadMode: imageUploadMode(platform.imageUploadMode, imageUploadMode(existing?.imageUploadMode, 'geekai')),
+      imageUploadConfig: sanitizeImageUploadConfig(platform.imageUploadConfig) ?? existing?.imageUploadConfig,
       extraModels: sanitizeModels(platform.extraModels),
       defaultModel: optionalStr(platform.defaultModel),
+      accounts: sanitizeAccounts(platform.accounts, includeSecrets) ?? existing?.accounts,
+      activeAccountId: optionalStr(platform.activeAccountId) ?? existing?.activeAccountId,
     });
   }).filter(platform => platform.platformId);
 }

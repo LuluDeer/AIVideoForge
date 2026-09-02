@@ -29,10 +29,12 @@ export interface ElectronApi {
     headers?: Record<string, string>;
     body?: BodyInit | null | undefined;
   }) => Promise<{ status: number; body: string; headers: Record<string, string> }>;
-  uploadToCos: (data: number[], options: {
+  uploadToCos: (data: Uint8Array | ArrayBuffer | number[], options: {
     url: string;
     headers: Record<string, string>;
   }) => Promise<void>;
+  setCorsOrigins: (baseUrls: string[]) => Promise<{ success: boolean; error?: string }>;
+  clearCookies: () => Promise<{ success: boolean; error?: string }>;
   readDataFile: (filename: string) => Promise<unknown>;
   writeDataFile: (filename: string, data: unknown) => Promise<{ success: boolean; error?: string }>;
   encryptString: (plainText: string) => Promise<{ success: boolean; encrypted?: string; available?: boolean; error?: string }>;

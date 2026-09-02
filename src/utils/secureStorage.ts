@@ -60,9 +60,17 @@ export function isEncryptedSecret(value: string | undefined | null): boolean {
  * React 状态中仍保持明文，保证运行时业务逻辑（发起 API 请求等）不受影响。
  */
 export async function encryptAppConfigForStorage(config: AppConfig): Promise<AppConfig> {
+  const encryptAccounts = async (accounts: AppConfig['platforms'][number]['accounts']) => {
+    if (!accounts) return accounts;
+    return Promise.all(accounts.map(async account => ({
+      ...account,
+      apiKey: isEncryptedSecret(account.apiKey) ? account.apiKey : await encryptSecret(account.apiKey),
+    })));
+  };
   const platforms = await Promise.all(config.platforms.map(async platform => ({
     ...platform,
     apiKey: isEncryptedSecret(platform.apiKey) ? platform.apiKey : await encryptSecret(platform.apiKey),
+    accounts: await encryptAccounts(platform.accounts),
   })));
   const customPlatforms = config.customPlatforms
     ? await Promise.all(config.customPlatforms.map(async platform => ({
@@ -83,6 +91,9 @@ export async function decryptAppConfigFromStorage(config: AppConfig): Promise<Ap
   const platforms = await Promise.all(config.platforms.map(async platform => ({
     ...platform,
     apiKey: await decryptSecret(platform.apiKey),
+    accounts: platform.accounts
+      ? await Promise.all(platform.accounts.map(async account => ({ ...account, apiKey: await decryptSecret(account.apiKey) })))
+      : platform.accounts,
   })));
   const customPlatforms = config.customPlatforms
     ? await Promise.all(config.customPlatforms.map(async platform => ({

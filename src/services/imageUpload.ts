@@ -377,7 +377,8 @@ class ImageUploader {
     const electronAPI = window.electronAPI;
     
     if (electronAPI) {
-      await electronAPI.uploadToCos(Array.from(new Uint8Array(buffer)), {
+      // 直接传 Uint8Array：结构化克隆按二进制零拷贝传输，避免 Array.from 造成数十倍内存放大
+      await electronAPI.uploadToCos(new Uint8Array(buffer), {
         url: cosUrl,
         headers: cosHeaders,
       });

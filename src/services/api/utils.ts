@@ -13,10 +13,21 @@ export const getImageList = (value: unknown): string[] => {
   return [];
 };
 
+/** 远程 API 返回的 URL 只接受 http(s)，拒绝 javascript:/data:/file: 等可执行或本地协议 */
+export const isSafeRemoteUrl = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 export const collectUrls = (...values: Array<string | undefined>): Array<{ url: string }> => {
   const urls: Array<{ url: string }> = [];
   for (const url of values) {
-    if (typeof url !== 'string' || !url.trim()) continue;
+    if (!isSafeRemoteUrl(url)) continue;
     if (!urls.some(item => item.url === url)) urls.push({ url });
   }
   return urls;

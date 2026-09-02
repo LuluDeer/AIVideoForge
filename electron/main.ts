@@ -9,9 +9,28 @@ const IPC_TIMEOUT_MS = 30_000;
 const HEAD_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+const MAX_DOWNLOAD_REDIRECTS = 5;
+const DOWNLOAD_PROGRESS_INTERVAL_MS = 200;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** 把下载文件名净化为不含路径分隔符与 Windows 非法字符的安全名 */
+const sanitizeFileName = (name: string): string => (
+  path.basename(name).replace(/[\\/:*?"<>|]/g, '_').replace(/^\.+/, '') || 'video.mp4'
+);
+
+/** 从 IPC 收到的二进制负载还原 Buffer：优先 ArrayBuffer/Uint8Array（结构化克隆零拷贝），兼容旧的 number[] */
+const toBufferFromIpcPayload = (payload: unknown): Buffer => {
+  if (payload instanceof ArrayBuffer) return Buffer.from(new Uint8Array(payload));
+  if (ArrayBuffer.isView(payload)) {
+    const view = payload as NodeJS.ArrayBufferView;
+    return Buffer.from(view.buffer, view.byteOffset, view.byteLength);
+  }
+  if (Array.isArray(payload)) return Buffer.from(payload);
+  throw new Error('上传内容无效');
+};
 
 const assertHttpsUrl = (value: unknown): URL => {
   if (typeof value !== 'string') throw new Error('URL 参数无效');
@@ -53,33 +72,20 @@ const getAppIconPath = () => (
     : path.join(__dirname, '../public-build/app-icon.png')
 );
 
-const createWindow = () => {
-  const windowBounds = getAdaptiveWindowBounds();
-  const mainWindow = new BrowserWindow({
-    ...windowBounds,
-    minWidth: 1100,
-    minHeight: 760,
-    center: true,
-    icon: getAppIconPath(),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      webSecurity: false,
-    },
-    title: 'AIVideoForge - AI 视频工坊',
-  });
+// CORS 注入过滤器：内置平台域 + 用户配置的自定义平台域（经 set-cors-origins IPC 动态更新）。
+// 开启 webSecurity 后，渲染进程跨源调用这些 API 依赖这里注入的 CORS 头。
+const builtinCorsUrls = [
+  'https://geekai.co/*',
+  'https://*.geekai.co/*',
+  'https://apizzz.com/*',
+  'https://*.apizzz.com/*',
+  'https://api.klingai.com/*',
+  'https://ark.cn-beijing.volces.com/*',
+];
+let customCorsUrls: string[] = [];
 
-  const platformRequestFilter = {
-    urls: [
-      'https://geekai.co/*',
-      'https://*.geekai.co/*',
-      'https://apizzz.com/*',
-      'https://*.apizzz.com/*',
-      'https://api.klingai.com/*',
-      'https://ark.cn-beijing.volces.com/*',
-    ],
-  };
+const registerPlatformCorsHandlers = () => {
+  const platformRequestFilter = { urls: [...builtinCorsUrls, ...customCorsUrls] };
 
   session.defaultSession.webRequest.onBeforeSendHeaders(platformRequestFilter, (details, callback) => {
     const headers = { ...details.requestHeaders };
@@ -101,11 +107,77 @@ const createWindow = () => {
       },
     });
   });
+};
+
+ipcMain.handle('set-cors-origins', async (_event, baseUrls: unknown) => {
+  try {
+    const urls = Array.isArray(baseUrls)
+      ? baseUrls.filter((value): value is string => typeof value === 'string').map(value => {
+          try {
+            const parsed = new URL(value);
+            return parsed.protocol === 'https:' ? `${parsed.origin}/*` : null;
+          } catch {
+            return null;
+          }
+        }).filter((value): value is string => !!value)
+      : [];
+    const next = Array.from(new Set(urls)).slice(0, 50);
+    if (JSON.stringify(next) === JSON.stringify(customCorsUrls)) return { success: true };
+    customCorsUrls = next;
+    registerPlatformCorsHandlers();
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update CORS origins:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+const createWindow = () => {
+  const windowBounds = getAdaptiveWindowBounds();
+  const mainWindow = new BrowserWindow({
+    ...windowBounds,
+    minWidth: 1100,
+    minHeight: 760,
+    center: true,
+    icon: getAppIconPath(),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+    title: 'AIVideoForge - AI 视频工坊',
+  });
+
+  // 导航守卫：主窗口只允许停留在应用自身页面，外部链接交给系统浏览器，
+  // 防止远程内容获得 preload 暴露的 electronAPI 能力。
+  const isAppUrl = (target: string): boolean => {
+    try {
+      const parsed = new URL(target);
+      if (process.env.NODE_ENV === 'development') {
+        return parsed.protocol === 'file:' || parsed.origin === 'http://localhost:5173';
+      }
+      return parsed.protocol === 'file:';
+    } catch {
+      return false;
+    }
+  };
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!isAppUrl(targetUrl)) {
+      event.preventDefault();
+      if (/^https?:/i.test(targetUrl)) void shell.openExternal(targetUrl);
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (/^https?:/i.test(targetUrl)) void shell.openExternal(targetUrl);
+    return { action: 'deny' };
+  });
 
   mainWindow.webContents.on('did-finish-load', async () => {
     const configStr = await session.defaultSession.cookies.get({ url: 'https://geekai.co' });
     console.log('Cookies loaded:', configStr.length);
   });
+
+  registerPlatformCorsHandlers();
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -132,15 +204,18 @@ const createWindow = () => {
         { role: 'paste' },
       ],
     },
-    {
-      label: '视图',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { type: 'separator' },
-        { role: 'toggleDevTools' },
-      ],
-    },
+    // 生产环境不暴露刷新/DevTools，避免绕过界面直接读取本地存储
+    ...(process.env.NODE_ENV === 'development' || !app.isPackaged
+      ? [{
+          label: '视图',
+          submenu: [
+            { role: 'reload' as const },
+            { role: 'forceReload' as const },
+            { type: 'separator' as const },
+            { role: 'toggleDevTools' as const },
+          ],
+        }]
+      : []),
   ]);
 
   Menu.setApplicationMenu(menu);
@@ -170,6 +245,20 @@ ipcMain.handle('set-cookies', async (_event, ck) => {
     return { success: true };
   } catch (e) {
     console.error('Failed to set cookies:', e);
+    return { success: false, error: String(e) };
+  }
+});
+
+ipcMain.handle('clear-cookies', async () => {
+  try {
+    const cookies = await session.defaultSession.cookies.get({ domain: '.geekai.co' });
+    for (const cookie of cookies) {
+      const host = (cookie.domain ?? '').replace(/^\./, '');
+      await session.defaultSession.cookies.remove(`https://${host}`, cookie.name);
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Failed to clear cookies:', e);
     return { success: false, error: String(e) };
   }
 });
@@ -236,11 +325,10 @@ ipcMain.handle('make-request', async (_event, reqUrl, options) => {
   });
 });
 
-ipcMain.handle('upload-to-cos', async (_event, bufferArray, options) => {
+ipcMain.handle('upload-to-cos', async (_event, bufferPayload, options) => {
   return new Promise((resolve, reject) => {
     try {
-      if (!Array.isArray(bufferArray)) throw new Error('上传内容无效');
-      const buffer = Buffer.from(bufferArray);
+      const buffer = toBufferFromIpcPayload(bufferPayload);
       if (buffer.length <= 0 || buffer.length > MAX_UPLOAD_BYTES) throw new Error('上传文件大小无效');
       const urlObj = assertHttpsUrl(isRecord(options) ? options.url : undefined);
       const inputHeaders = isRecord(options) && isRecord(options.headers) ? options.headers : {};
@@ -340,28 +428,74 @@ ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string,
       reject(new Error(`创建下载目录失败（${error instanceof Error ? error.message : String(error)}），请检查下载路径「${savePath}」是否存在或可写`));
       return;
     }
-    const urlFileName = decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`;
-    // 优先使用 taskId 作为文件名，避免中转站默认同名文件互相覆盖
+    // 先解码再取 basename，并剔除路径分隔符/非法字符；taskId 同样净化，防止目录穿越写出
+    const urlFileName = sanitizeFileName(decodeURIComponent(path.basename(urlObj.pathname)) || `video-${Date.now()}.mp4`);
     let fileName = urlFileName;
     if (taskId) {
       const ext = path.extname(urlFileName) || '.mp4';
-      fileName = `${taskId}${ext}`;
+      fileName = `${sanitizeFileName(String(taskId))}${ext}`;
     }
-    const filePath = path.join(savePath, fileName);
-
-    const sendProgress = (progress: number, receivedBytes: number, totalBytes: number) => {
-      if (taskId) {
-        event.sender.send('download-progress', { taskId, progress, receivedBytes, totalBytes });
-      }
-    };
+    const resolvedDir = path.resolve(savePath);
+    const filePath = path.resolve(resolvedDir, fileName);
+    if (!filePath.startsWith(resolvedDir + path.sep)) {
+      reject(new Error('下载文件名不合法，已拒绝写入目标目录之外'));
+      return;
+    }
 
     const headers: Record<string, string> = {};
     if (requestHeaders && typeof requestHeaders.Authorization === 'string') {
       headers.Authorization = requestHeaders.Authorization;
     }
 
-    const req = https.request(urlObj, { headers }, (res) => {
-      if (res.statusCode === 200) {
+    // 进度节流：最多每 DOWNLOAD_PROGRESS_INTERVAL_MS 或百分比变化时发送一次，避免事件风暴拖垮渲染进程
+    let lastProgressSentAt = 0;
+    let lastProgressValue = -1;
+    const sendProgress = (progress: number, receivedBytes: number, totalBytes: number) => {
+      if (!taskId) return;
+      const now = Date.now();
+      if (progress !== 100 && progress === lastProgressValue && now - lastProgressSentAt < DOWNLOAD_PROGRESS_INTERVAL_MS) return;
+      lastProgressSentAt = now;
+      lastProgressValue = progress;
+      event.sender.send('download-progress', { taskId, progress, receivedBytes, totalBytes });
+    };
+
+    const cleanupPartialFile = () => {
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (error) {
+        console.error('Failed to cleanup partial download:', error);
+      }
+    };
+
+    const startRequest = (targetUrl: URL, redirectCount: number) => {
+      const req = https.request(targetUrl, { headers }, (res) => {
+        // 跟随 CDN 常见的 3xx 重定向（仅 https，限制跳数）
+        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307 || res.statusCode === 308) {
+          res.resume();
+          const location = res.headers.location;
+          if (!location || redirectCount >= MAX_DOWNLOAD_REDIRECTS) {
+            reject(new Error(`下载失败: HTTP ${res.statusCode}${location ? '（重定向次数过多）' : '（缺少重定向地址）'}`));
+            return;
+          }
+          try {
+            const nextUrl = new URL(location, targetUrl);
+            if (nextUrl.protocol !== 'https:') {
+              reject(new Error('仅允许下载 HTTPS 资源'));
+              return;
+            }
+            startRequest(nextUrl, redirectCount + 1);
+          } catch {
+            reject(new Error('下载重定向地址无效'));
+          }
+          return;
+        }
+
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`下载失败: HTTP ${res.statusCode}`));
+          return;
+        }
+
         const totalBytes = Number(res.headers['content-length'] || 0);
         let receivedBytes = 0;
         const fileStream = fs.createWriteStream(filePath);
@@ -381,17 +515,29 @@ ipcMain.handle('download-file', async (event, fileUrl: string, savePath: string,
           sendProgress(100, receivedBytes, totalBytes);
           resolve({ success: true, filePath, savePath });
         });
-        fileStream.on('error', reject);
-      } else {
-        reject(new Error(`下载失败: HTTP ${res.statusCode}`));
-      }
-    });
-    
-    req.on('error', (e) => {
-      reject(e);
-    });
-    
-    req.end();
+        fileStream.on('error', (error) => {
+          res.destroy();
+          cleanupPartialFile();
+          reject(error);
+        });
+        res.on('error', (error) => {
+          fileStream.destroy();
+          cleanupPartialFile();
+          reject(error);
+        });
+      });
+
+      // 空闲超时：连接停滞时主动断开，避免 Promise 永久挂起导致任务卡在“下载中”
+      req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => req.destroy(new Error('下载超时，请检查网络后重试')));
+      req.on('error', (e) => {
+        cleanupPartialFile();
+        reject(e);
+      });
+
+      req.end();
+    };
+
+    startRequest(urlObj, 0);
   });
 });
 

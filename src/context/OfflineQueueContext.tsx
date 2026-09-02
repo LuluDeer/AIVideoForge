@@ -13,7 +13,8 @@ import {
   OFFLINE_LOCAL_IMAGE_MESSAGE,
   OFFLINE_QUEUE_RETRY_INTERVAL,
   OFFLINE_QUEUE_STORAGE_KEY,
-  isNetworkErrorMessage,
+  isOfflineQueueRetryExhausted,
+  isRetryableNetworkError,
   normalizeOfflineQueueForStorage,
   offlineQueueItemHasLocalOnlyMedia,
   sanitizeOfflineQueueForStorage,
@@ -104,7 +105,7 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
       return { success: true, networkError: false };
     } catch (err) {
       const message = getApiSafeMessage(err, '视频生成请求失败');
-      return { success: false, networkError: isNetworkErrorMessage(message), message };
+      return { success: false, networkError: isRetryableNetworkError(err, message), message };
     }
   }, [addTask, getPlatformForItem]);
 
@@ -117,6 +118,8 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
       const snapshot = [...queueRef.current];
       for (const item of snapshot) {
         if (!queueRef.current.some(q => q.id === item.id)) continue;
+        // 自动重试已达上限的条目不再自动提交，保留在队列中等待用户手动重试
+        if (isOfflineQueueRetryExhausted(item)) continue;
         const result = await submitOfflineItem(item);
         if (result.success) {
           setQueue(prev => {
@@ -184,9 +187,10 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
         return next;
       });
     } else {
+      // 用户主动重试视为开启新一轮自动重试周期，retryCount 重置为 1
       setQueue(prev => {
         const next = prev.map(q => q.id === id
-          ? { ...q, retryCount: q.retryCount + 1, lastError: result.message, lastAttemptAt: Date.now() }
+          ? { ...q, retryCount: 1, lastError: result.message, lastAttemptAt: Date.now() }
           : q);
         saveQueue(next);
         return next;

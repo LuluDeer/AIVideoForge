@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setHttpProxyConfig: (config) => ipcRenderer.invoke('set-http-proxy-config', config),
   makeRequest: (url, options) => ipcRenderer.invoke('make-request', url, options),
   uploadToCos: (buffer, options) => ipcRenderer.invoke('upload-to-cos', buffer, options),
+  setCorsOrigins: (baseUrls) => ipcRenderer.invoke('set-cors-origins', baseUrls),
+  clearCookies: () => ipcRenderer.invoke('clear-cookies'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   checkDir: (targetPath) => ipcRenderer.invoke('check-dir', targetPath),
   downloadFile: (url, savePath, taskId, headers) => ipcRenderer.invoke('download-file', url, savePath, taskId, headers),

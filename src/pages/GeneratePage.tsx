@@ -16,7 +16,7 @@ import { addCustomPrompt, deleteCustomPrompt, loadCustomPrompts, updateCustomPro
 import type { PromptItem } from '../services/promptLibrary';
 import { logger } from '../utils/logger';
 import { containsLocalOnlyImageValue, formatErrorWithAdvice, getTaskVideoUrl, normalizeTaskStatus } from '../context/taskUtils';
-import { isNetworkErrorMessage } from '../context/offlineQueueUtils';
+import { isRetryableNetworkError } from '../context/offlineQueueUtils';
 import { validateGenerationInput } from './generate/validation';
 import { MAX_IMAGE_URL_LENGTH, isAssetUrl, normalizeImageUrl, normalizeMediaUrl, validateImageFile, validateMediaFile } from './generate/imageInput';
 
@@ -459,7 +459,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         } catch (err) {
           const msg = getApiSafeMessage(err, '视频生成请求失败');
           // 网络类异常（断网/连接超时等）不算最终失败，转入离线队列，网络恢复后自动重新提交
-          if (isNetworkErrorMessage(msg)) {
+          if (isRetryableNetworkError(err, msg)) {
             enqueueOfflineTask({
               platformId: activePlatform?.id,
               model: selectedModelId,
@@ -509,6 +509,11 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
       return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = e => resolve((e.target?.result as string) ?? null);
+        reader.onerror = () => {
+          logger.warn('GeneratePage', '读取图片文件失败', reader.error);
+          setError('读取图片文件失败，文件可能已被移动或无访问权限，请重试');
+          resolve(null);
+        };
         reader.readAsDataURL(file);
       });
     }

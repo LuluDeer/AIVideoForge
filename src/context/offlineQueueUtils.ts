@@ -1,4 +1,5 @@
 import type { GenerationMode, VideoGenerationRequest } from '../types';
+import { ApiError } from '../services/api/errorNormalizer';
 import {
   containsLocalOnlyImageValue,
   isLocalOnlyImagePlaceholder,
@@ -117,8 +118,24 @@ export function offlineQueueItemHasLocalOnlyMedia(item: OfflineQueueItem): boole
   return containsLocalOnlyImageValue(item.request);
 }
 
+/** 自动重试次数上限：达到后不再自动提交（保留在队列中，用户仍可手动重试） */
+export const MAX_OFFLINE_RETRY_COUNT = 10;
+
+export function isOfflineQueueRetryExhausted(item: Pick<OfflineQueueItem, 'retryCount'>): boolean {
+  return item.retryCount >= MAX_OFFLINE_RETRY_COUNT;
+}
+
 /** 判断错误信息是否为网络类错误，用于展示更贴切的提示文案 */
 export function isNetworkErrorMessage(message?: string): boolean {
   if (!message) return false;
-  return /网络|连接异常|network|failed to fetch|ECONNABORTED|timed?\s*out/i.test(message);
+  return /网络|连接异常|超时|network|timeout|timed?\s*out|failed to fetch|ECONNABORTED|ETIMEDOUT/i.test(message);
+}
+
+/**
+ * 判断提交异常是否属于可入队/可重试的网络类错误：
+ * 优先使用 ApiError 携带的 isNetwork/isTimeout 标志，避免依赖错误文案正则匹配。
+ */
+export function isRetryableNetworkError(error: unknown, message?: string): boolean {
+  if (error instanceof ApiError) return error.isNetwork || error.isTimeout;
+  return isNetworkErrorMessage(message);
 }

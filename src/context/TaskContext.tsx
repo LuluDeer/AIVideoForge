@@ -26,12 +26,14 @@ import {
   MAX_CONCURRENT_POLLS,
   MAX_DOWNLOAD_RETRY_COUNT,
   MAX_POLL_ERROR_COUNT,
+  MAX_STORED_TASKS,
   normalizeTaskPatch,
   normalizeTasksForStorage,
   normalizeTaskStatus,
   POLL_INTERVAL,
   POLL_TIMEOUT,
   POLL_TIMEOUT_PAUSED_MESSAGE,
+  trimTasksForStorage,
 } from './taskUtils';
 
 const STORAGE_KEY = 'geekai_tasks';
@@ -89,6 +91,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const activePlatformRef = React.useRef(activePlatform);
   const runtimePlatformsRef = React.useRef(runtimePlatforms);
   const downloadPathRef = React.useRef(appConfig.downloadPath);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const loadedRef = React.useRef(false);
 
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   useEffect(() => { activePlatformRef.current = activePlatform; }, [activePlatform]);
@@ -96,8 +100,22 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => { downloadPathRef.current = appConfig.downloadPath; }, [appConfig.downloadPath]);
 
   const saveTasksData = useCallback((data: Task[]) => {
-    writeJsonStorage(STORAGE_KEY, normalizeTasksForStorage(data), e => logger.error('TaskContext', '保存任务失败', e));
+    const trimmed = trimTasksForStorage(data);
+    const ok = writeJsonStorage(STORAGE_KEY, normalizeTasksForStorage(trimmed), e => logger.error('TaskContext', '保存任务失败', e));
+    if (!ok) {
+      setStorageWarning('任务历史保存失败：本地存储空间可能已满，最新状态仅保留在内存中，重启后会丢失。请删除部分历史任务后重试。');
+    } else if (trimmed.length < data.length) {
+      setStorageWarning(`任务历史已超过 ${MAX_STORED_TASKS} 条，仅保留最新 ${MAX_STORED_TASKS} 条。`);
+    } else {
+      setStorageWarning(null);
+    }
   }, []);
+
+  // 持久化统一放在 effect 中执行（而非 setState updater 内），避免 updater 副作用导致 StrictMode 双写与高频全量序列化失控
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    saveTasksData(tasks);
+  }, [tasks, saveTasksData]);
 
   const loadTasks = useCallback((): Task[] => {
     const parsed = readJsonStorage<unknown[]>(STORAGE_KEY, [], Array.isArray);
@@ -110,35 +128,28 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addTask = useCallback((taskData: Omit<Task, 'created_at' | 'updated_at'>): Task => {
     const newTask = createNewTask(taskData);
-    setTasks(prev => {
-      const next = [newTask, ...prev];
-      saveTasksData(next);
-      return next;
-    });
+    setTasks(prev => [newTask, ...prev]);
     return newTask;
-  }, [saveTasksData]);
+  }, []);
 
   const updateTask = useCallback((id: string, updates: Partial<Task>) => {
     const normalizedUpdates = normalizeTaskPatch(updates);
-    setTasks(prev => {
-      const next = prev.map(t => t.id === id ? { ...t, ...normalizedUpdates, updated_at: Date.now() } : t);
-      saveTasksData(next);
-      return next;
-    });
-  }, [saveTasksData]);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...normalizedUpdates, updated_at: Date.now() } : t));
+  }, []);
 
   const removeTask = useCallback((id: string) => {
-    setTasks(prev => {
-      const next = prev.filter(t => t.id !== id);
-      saveTasksData(next);
-      return next;
-    });
-  }, [saveTasksData]);
+    pollingTaskIds.current.delete(id);
+    triggeredRef.current.delete(id);
+    pollRetryCountRef.current.delete(id);
+    setTasks(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   const clearTasks = useCallback(() => {
+    pollingTaskIds.current.clear();
+    triggeredRef.current.clear();
+    pollRetryCountRef.current.clear();
     setTasks([]);
-    saveTasksData([]);
-  }, [saveTasksData]);
+  }, []);
 
   const getTaskPlatform = useCallback((task: Task) => task.platformId
     ? (runtimePlatformsRef.current.find(p => p.id === task.platformId) ?? activePlatformRef.current)
@@ -272,7 +283,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             } : t;
           });
           if (newTasks.length > 0) next.unshift(...newTasks);
-          saveTasksData(next);
           return next;
         });
       }
@@ -280,7 +290,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       logger.error('TaskContext', '同步云端任务失败', e);
       throw e;
     }
-  }, [saveTasksData]);
+  }, []);
 
   const doQueryTask = useCallback(async (task: Task): Promise<void> => {
     const taskPlatform = getTaskPlatform(task);
@@ -295,7 +305,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const message = formatPollError(e, count);
       pollRetryCountRef.current.set(task.id, count);
       if (count >= MAX_POLL_ERROR_COUNT) {
-        updateTask(task.id, { poll_error_count: count, poll_paused: true, last_poll_error: `${message}，${POLL_TIMEOUT_PAUSED_MESSAGE}` });
+        updateTask(task.id, { poll_error_count: count, poll_paused: true, poll_paused_at: Date.now(), last_poll_error: `${message}，${POLL_TIMEOUT_PAUSED_MESSAGE}` });
         pollRetryCountRef.current.delete(task.id);
       } else {
         updateTask(task.id, { poll_error_count: count, last_poll_error: message });
@@ -343,20 +353,16 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const request: VideoGenerationRequest = { model: task.model, prompt: task.prompt, image: task.image_urls ?? task.image_url, image_tail: task.image_tail_url, async: true, ...savedParams };
 
     const recordRetryFailure = (message: string) => {
-      setTasks(prev => {
-        const next = prev.map((t): Task => {
-          if (t.id !== taskId) return t;
-          const oldHistory = t.retry_history ?? [];
-          return {
-            ...t,
-            error_message: `重试提交失败：${message}`,
-            updated_at: Date.now(),
-            retry_history: [...oldHistory, { time: Date.now(), old_error: getApiSafeMessage(t.error_message, '任务失败'), old_task_id: t.id, new_task_id: '', success: false, error: `提交失败尝试：${message}` }],
-          };
-        });
-        saveTasksData(next);
-        return next;
-      });
+      setTasks(prev => prev.map((t): Task => {
+        if (t.id !== taskId) return t;
+        const oldHistory = t.retry_history ?? [];
+        return {
+          ...t,
+          error_message: `重试提交失败：${message}`,
+          updated_at: Date.now(),
+          retry_history: [...oldHistory, { time: Date.now(), old_error: getApiSafeMessage(t.error_message, '任务失败'), old_task_id: t.id, new_task_id: '', success: false, error: `提交失败尝试：${message}` }],
+        };
+      }));
     };
 
     if (containsLocalOnlyImageValue(savedParams) || containsLocalOnlyImageValue(request.image) || containsLocalOnlyImageValue(request.image_tail) || containsLocalOnlyImageValue(request.images)) {
@@ -369,41 +375,41 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const response = await api.generateVideo(request);
       const responseStatus = normalizeTaskStatus(response.task_status);
       const videoUrl = getTaskVideoUrl(response, taskPlatform);
-      setTasks(prev => {
-        const next = prev.map(t => {
-          if (t.id !== taskId) return t;
-          const oldHistory = t.retry_history ?? [];
-          return {
-            ...t,
-            id: response.task_id,
-            status: responseStatus,
-            raw_status: response.task_status,
-            video_url: videoUrl,
-            error_message: undefined,
-            enhanced_prompt: response.enhanced_prompt,
-            poll_count: 0,
-            poll_error_count: 0,
-            poll_paused: false,
-            last_poll_error: undefined,
-            downloaded: false,
-            download_status: t.auto_download && t.download_path ? ('waiting' as const) : undefined,
-            download_file_path: undefined,
-            downloaded_at: undefined,
-            download_error: undefined,
-            updated_at: Date.now(),
-            retry_count: (t.retry_count ?? 0) + 1,
-            retry_history: [...oldHistory, { time: Date.now(), old_error: getApiSafeMessage(t.error_message, '任务失败'), old_task_id: t.id, new_task_id: response.task_id, success: isTaskSucceeded(responseStatus), error: isTaskFailed(responseStatus) ? '提交即失败' : undefined }],
-          };
-        });
-        saveTasksData(next);
-        return next;
-      });
+      // 换 id 后清理旧 id 的轮询/下载跟踪状态，避免慢性泄漏
+      pollingTaskIds.current.delete(taskId);
+      triggeredRef.current.delete(taskId);
+      pollRetryCountRef.current.delete(taskId);
+      setTasks(prev => prev.map(t => {
+        if (t.id !== taskId) return t;
+        const oldHistory = t.retry_history ?? [];
+        return {
+          ...t,
+          id: response.task_id,
+          status: responseStatus,
+          raw_status: response.task_status,
+          video_url: videoUrl,
+          error_message: undefined,
+          enhanced_prompt: response.enhanced_prompt,
+          poll_count: 0,
+          poll_error_count: 0,
+          poll_paused: false,
+          last_poll_error: undefined,
+          downloaded: false,
+          download_status: t.auto_download && t.download_path ? ('waiting' as const) : undefined,
+          download_file_path: undefined,
+          downloaded_at: undefined,
+          download_error: undefined,
+          updated_at: Date.now(),
+          retry_count: (t.retry_count ?? 0) + 1,
+          retry_history: [...oldHistory, { time: Date.now(), old_error: getApiSafeMessage(t.error_message, '任务失败'), old_task_id: t.id, new_task_id: response.task_id, success: isTaskSucceeded(responseStatus), error: isTaskFailed(responseStatus) ? '提交即失败' : undefined }],
+        };
+      }));
     } catch (e) {
       const message = getApiSafeMessage(e, '未知错误');
       recordRetryFailure(message);
       throw e;
     }
-  }, [getTaskPlatform, saveTasksData]);
+  }, [getTaskPlatform]);
 
   const pollRunningTasks = useCallback(async () => {
     // 暂停的任务在达到 POLL_RECOVERY_INTERVAL 恢复窗口前会被排除；窗口到达后重新纳入轮询，
@@ -416,7 +422,15 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (pollingTaskIds.current.has(task.id)) return;
       const pollCount = task.poll_count ?? 0;
       if (pollCount >= POLL_TIMEOUT) {
-        updateTask(task.id, createPollTimeoutPausePatch(task));
+        if (!task.poll_paused) {
+          // 首次达到轮询上限：暂停并记录暂停时刻，等待恢复窗口
+          updateTask(task.id, createPollTimeoutPausePatch(task));
+          return;
+        }
+        // 恢复窗口已到达（isTaskPollEligible 已保证）：重置计数后真正发起一次查询，
+        // 成功时 doQueryTask 会清除暂停状态；失败则按连续错误计数重新暂停。
+        pollingTaskIds.current.add(task.id);
+        try { await doQueryTask({ ...task, poll_count: 0 }); } catch (e) { logger.error('TaskContext', '轮询任务失败', e); } finally { pollingTaskIds.current.delete(task.id); }
         return;
       }
       pollingTaskIds.current.add(task.id);
@@ -438,6 +452,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const loaded = loadTasks();
+    loadedRef.current = true;
     let timer: number | undefined;
     if (loaded.some(t => isTaskActive(t.status) && isTaskPollEligible(t))) {
       timer = window.setTimeout(() => { void pollRunningTasks(); }, 1000);
@@ -455,14 +470,15 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     if (!window.electronAPI) return;
-    const pending = tasks.filter(t => isTaskSucceeded(t.status) && t.auto_download && !t.downloaded && t.video_url && t.download_path && t.download_status !== 'downloading' && !triggeredRef.current.has(t.id));
+    // 仅处理尚未开始下载的任务；失败任务的重试由 retryFailedDownloads 按退避与次数上限驱动，
+    // 此处不再在失败后清除触发标记，避免每次 tasks 变化都立即重拉完整下载形成无限循环。
+    const pending = tasks.filter(t => isTaskSucceeded(t.status) && t.auto_download && !t.downloaded && t.video_url && t.download_path && t.download_status !== 'downloading' && t.download_status !== 'failed' && !triggeredRef.current.has(t.id));
     pending.forEach(async task => {
       triggeredRef.current.add(task.id);
       try {
         await downloadTaskVideo(task, task.video_url!, task.download_path);
       } catch (e) {
         logger.error('TaskContext', '补充下载失败', e);
-        triggeredRef.current.delete(task.id);
       }
     });
   }, [tasks, downloadTaskVideo]);
@@ -514,7 +530,8 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     reuseTaskData,
     requestReuseTask,
     clearReuseTaskData,
-  }), [tasks, addTask, updateTask, removeTask, clearTasks, loadTasks, saveTasks, pollRunningTasks, cancelTask, refreshTask, fetchRemoteTasks, runningCount, retryTask, reuseTaskData, requestReuseTask, clearReuseTaskData]);
+    storageWarning,
+  }), [tasks, addTask, updateTask, removeTask, clearTasks, loadTasks, saveTasks, pollRunningTasks, cancelTask, refreshTask, fetchRemoteTasks, runningCount, retryTask, reuseTaskData, requestReuseTask, clearReuseTaskData, storageWarning]);
 
   return <TaskContext.Provider value={contextValue}>{children}</TaskContext.Provider>;
 };

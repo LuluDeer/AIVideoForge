@@ -18,6 +18,8 @@ export interface TaskContextType {
   reuseTaskData: { platformId: string; model: string; mode: GenerationMode; prompt: string; paramValues: Record<string, unknown> } | null;
   requestReuseTask: (taskId: string) => void;
   clearReuseTaskData: () => void;
+  /** 任务历史持久化异常（配额不足/超限裁剪）的用户告警，null 表示正常 */
+  storageWarning: string | null;
 }
 
 export const TaskContext = createContext<TaskContextType | undefined>(undefined);
