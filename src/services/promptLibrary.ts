@@ -94,6 +94,14 @@ export const loadCustomPrompts = (): PromptItem[] => {
 };
 
 /**
+ * 词库初始化就绪信号：App 启动时通过 setPromptLibraryReady 注入 initPromptLibrary() 的 Promise，
+ * 消费方（如 GeneratePage）await 它以确保文件恢复完成后再读取，避免启动竞态。
+ */
+let readyPromise: Promise<void> = Promise.resolve();
+export const setPromptLibraryReady = (promise: Promise<void>): void => { readyPromise = promise; };
+export const whenPromptLibraryReady = (): Promise<void> => readyPromise;
+
+/**
  * 应用启动时调用：从文件系统恢复词库到 localStorage。
  * - 如果文件中有数据但 localStorage 为空（如升级安装后 Chromium 缓存丢失），从文件恢复
  * - 如果两边都有数据，取并集去重

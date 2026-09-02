@@ -124,8 +124,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return loaded;
   }, []);
 
-  const saveTasks = useCallback(() => saveTasksData(tasksRef.current), [saveTasksData]);
-
   const addTask = useCallback((taskData: Omit<Task, 'created_at' | 'updated_at'>): Task => {
     const newTask = createNewTask(taskData);
     setTasks(prev => [newTask, ...prev]);
@@ -519,9 +517,6 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateTask,
     removeTask,
     clearTasks,
-    loadTasks,
-    saveTasks,
-    pollRunningTasks,
     cancelTask,
     refreshTask,
     fetchRemoteTasks,
@@ -531,7 +526,7 @@ export const TaskProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     requestReuseTask,
     clearReuseTaskData,
     storageWarning,
-  }), [tasks, addTask, updateTask, removeTask, clearTasks, loadTasks, saveTasks, pollRunningTasks, cancelTask, refreshTask, fetchRemoteTasks, runningCount, retryTask, reuseTaskData, requestReuseTask, clearReuseTaskData, storageWarning]);
+  }), [tasks, addTask, updateTask, removeTask, clearTasks, cancelTask, refreshTask, fetchRemoteTasks, runningCount, retryTask, reuseTaskData, requestReuseTask, clearReuseTaskData, storageWarning]);
 
   return <TaskContext.Provider value={contextValue}>{children}</TaskContext.Provider>;
 };

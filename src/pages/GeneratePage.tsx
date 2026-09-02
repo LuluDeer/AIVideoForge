@@ -12,7 +12,7 @@ import CloudreveUploader from '../services/cloudreveUpload';
 import GeekaiAssetService, { type GeekaiAssetKind } from '../services/geekaiAssets';
 import { getApiSafeMessage } from '../services/api/errorNormalizer';
 import { resolveParam } from '../services/modelConfigManager';
-import { addCustomPrompt, deleteCustomPrompt, loadCustomPrompts, updateCustomPrompt } from '../services/promptLibrary';
+import { addCustomPrompt, deleteCustomPrompt, loadCustomPrompts, updateCustomPrompt, whenPromptLibraryReady } from '../services/promptLibrary';
 import type { PromptItem } from '../services/promptLibrary';
 import { logger } from '../utils/logger';
 import { containsLocalOnlyImageValue, formatErrorWithAdvice, getTaskVideoUrl, normalizeTaskStatus } from '../context/taskUtils';
@@ -88,6 +88,14 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
   const [editPromptCategory, setEditPromptCategory] = useState('');
   const [editPromptText, setEditPromptText] = useState('');
   const [promptLibrary, setPromptLibrary] = useState<PromptItem[]>(() => loadCustomPrompts());
+  // 启动竞态修复：文件恢复完成前挂载时，本次会话也要看到恢复后的词库
+  useEffect(() => {
+    let cancelled = false;
+    void whenPromptLibraryReady().then(() => {
+      if (!cancelled) setPromptLibrary(loadCustomPrompts());
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [pendingReuseData, setPendingReuseData] = useState<PendingReuseData | null>(null);
   const stopGenerateRef = useRef(false);
   const promptSectionRef = useRef<HTMLDivElement | null>(null);

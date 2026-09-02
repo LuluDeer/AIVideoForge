@@ -30,22 +30,6 @@ export const MAX_POLL_ERROR_COUNT = 3;
 export const POLL_RECOVERY_INTERVAL = 5 * 60 * 1000; // 暂停后自动恢复尝试间隔：5 分钟
 export const MAX_CONCURRENT_POLLS = 5; // 单次轮询周期内最大并发请求数，避免任务数量过多时产生请求风暴
 export const MAX_DOWNLOAD_RETRY_COUNT = 3; // 下载失败后最多自动重试次数（指数退避）
-
-/**
- * 自适应轮询间隔（指数退避）。
- * 根据任务从创建至今的运行时长动态调整轮询频率，减少长时任务无效请求。
- * - 前 2 分钟：15 秒/次
- * - 2-5 分钟：30 秒/次
- * - 5-10 分钟：60 秒/次
- * - 10 分钟以上：120 秒/次
- */
-export function getAdaptivePollInterval(createdAt: number, now: number = Date.now()): number {
-  const elapsedMin = (now - createdAt) / 60000;
-  if (elapsedMin < 2) return 15000;
-  if (elapsedMin < 5) return 30000;
-  if (elapsedMin < 10) return 60000;
-  return 120000;
-}
 export const POLL_TIMEOUT_PAUSED_MESSAGE = '自动轮询已暂停，云端状态未知，请手动刷新或同步云端';
 export const STORAGE_OMITTED_VALUE = '[omitted-large-local-data]';
 export const LOCAL_ONLY_IMAGE_MESSAGE = '本地图片未保存，请重新上传或改用公开 URL';

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { ConfigProvider } from './context/ConfigContext';
 import { TaskProvider } from './context/TaskContext';
 import { OfflineQueueProvider } from './context/OfflineQueueContext';
@@ -6,11 +6,11 @@ import { useTasks } from './context/useTasks';
 import Sidebar from './components/Sidebar';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import ErrorBoundary from './components/ErrorBoundary';
-import { initPromptLibrary } from './services/promptLibrary';
+import { initPromptLibrary, setPromptLibraryReady } from './services/promptLibrary';
 import './App.css';
 import './theme-dark.css';
 
-initPromptLibrary();
+setPromptLibraryReady(initPromptLibrary());
 type Theme = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'aivideoforge-theme';
 const DEFAULT_THEME: Theme = 'light';
@@ -39,21 +39,30 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState('generate');
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const { runningCount, reuseTaskData } = useTasks();
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
   useEffect(() => { if (reuseTaskData) setActiveTab('generate'); }, [reuseTaskData]);
   useEffect(() => {
+    const dispatchRefreshAfterMount = () => {
+      const alreadyOnTasks = activeTabRef.current === 'tasks';
+      if (!alreadyOnTasks) setActiveTab('tasks');
+      // TasksPage 未挂载时事件没有监听者，切换后延迟派发等待其挂载完成
+      window.setTimeout(() => window.dispatchEvent(new Event('aivideoforge:refresh-tasks')), alreadyOnTasks ? 0 : 350);
+    };
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault();
-        setActiveTab('tasks');
-        window.dispatchEvent(new Event('aivideoforge:focus-task-search'));
+        const alreadyOnTasks = activeTabRef.current === 'tasks';
+        if (!alreadyOnTasks) setActiveTab('tasks');
+        window.setTimeout(() => window.dispatchEvent(new Event('aivideoforge:focus-task-search')), alreadyOnTasks ? 0 : 350);
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault();
-        window.dispatchEvent(new Event('aivideoforge:refresh-tasks'));
+        dispatchRefreshAfterMount();
       }
     };
     window.addEventListener('keydown', handler);

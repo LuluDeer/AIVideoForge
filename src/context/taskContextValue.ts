@@ -7,9 +7,6 @@ export interface TaskContextType {
   updateTask: (id: string, updates: Partial<Task>) => void;
   removeTask: (id: string) => void;
   clearTasks: () => void;
-  loadTasks: () => Task[];
-  saveTasks: () => void;
-  pollRunningTasks: () => void;
   cancelTask: (taskId: string) => Promise<void>;
   refreshTask: (taskId: string) => Promise<void>;
   fetchRemoteTasks: (options?: { page?: number; pageSize?: number; status?: string }) => Promise<void>;

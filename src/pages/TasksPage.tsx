@@ -21,7 +21,7 @@ type SortField = 'created_at' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 const TasksPage: React.FC = () => {
-  const { tasks, removeTask, clearTasks, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask, storageWarning } = useTasks();
+  const { tasks, removeTask, clearTasks, updateTask, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask, storageWarning } = useTasks();
   const { runtimePlatforms, activePlatform } = useConfig();
 
   const getPlatformName = (platformId: string): string =>
@@ -58,6 +58,7 @@ const TasksPage: React.FC = () => {
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [openingPathIds, setOpeningPathIds] = useState<Set<string>>(new Set());
   const [openPathMessage, setOpenPathMessage] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState('');
 
   React.useEffect(() => {
     const focus = () => searchInputRef.current?.focus();
@@ -209,6 +210,15 @@ const TasksPage: React.FC = () => {
   // 模型统计（基于当前状态过滤后的任务）
   const modelStats = useMemo(() => getModelStats(tasks, filter), [tasks, filter]);
 
+  // 增量渲染：任务卡片较重（缩略图/进度/操作按钮），全量渲染在数百条时明显掉帧。
+  // 默认渲染前 50 条，筛选条件变化时重置。
+  const TASK_PAGE_SIZE = 50;
+  const [visibleCount, setVisibleCount] = useState(TASK_PAGE_SIZE);
+  React.useEffect(() => {
+    setVisibleCount(TASK_PAGE_SIZE);
+  }, [filter, selectedModels, searchQuery, dateFrom, dateTo, platformFilter, modeFilter, tagFilter, sortField, sortOrder]);
+  const renderedTasks = useMemo(() => filteredTasks.slice(0, visibleCount), [filteredTasks, visibleCount]);
+
   const toggleModel = (model: string) => {
     setSelectedModels(prev =>
       prev.includes(model) ? prev.filter(m => m !== model) : [...prev, model]
@@ -325,6 +335,18 @@ const TasksPage: React.FC = () => {
       setSortField(field);
       setSortOrder('desc');
     }
+  };
+
+  const commitTaskTags = (task: Task, tags: string[]) => {
+    updateTask(task.id, { tags: tags.length ? tags : undefined });
+  };
+
+  const addTaskTag = (task: Task) => {
+    const value = tagDraft.trim();
+    if (!value) return;
+    const current = task.tags ?? [];
+    if (!current.includes(value)) commitTaskTags(task, [...current, value]);
+    setTagDraft('');
   };
 
   return (
@@ -535,9 +557,13 @@ const TasksPage: React.FC = () => {
                 全选
               </button>
             </div>
-            {filteredTasks.map(task => (
+            {renderedTasks.map(task => (
               <div
                 key={task.id}
+                onContextMenu={e => {
+                  e.preventDefault();
+                  setContextMenu({ task, x: Math.min(e.clientX, window.innerWidth - 190), y: Math.min(e.clientY, window.innerHeight - 160) });
+                }}
                 className={`task-card bg-white rounded-xl shadow-sm p-3 hover:shadow-md transition-shadow border ${
                   selectedIds.has(task.id) ? 'border-blue-400 bg-blue-50/30' : 'border-transparent'
                 }`}
@@ -741,6 +767,14 @@ const TasksPage: React.FC = () => {
                 </div>
               </div>
             ))}
+            {visibleCount < filteredTasks.length && (
+              <button
+                onClick={() => setVisibleCount(prev => prev + TASK_PAGE_SIZE)}
+                className="task-control w-full py-2.5 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                加载更多（已显示 {renderedTasks.length} / {filteredTasks.length}）
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -813,6 +847,35 @@ const TasksPage: React.FC = () => {
                 <div>
                   <span className="text-gray-500">更新时间:</span>
                   <div className="task-detail-plain-value text-gray-700 mt-1">{formatTaskDate(detailTask.updated_at)}</div>
+                </div>
+              </div>
+
+              {/* 标签管理 */}
+              <div>
+                <span className="text-sm text-gray-500">标签</span>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {(detailTask.tags ?? []).map(tag => (
+                    <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+                      {tag}
+                      <button
+                        onClick={() => commitTaskTags(detailTask, (detailTask.tags ?? []).filter(t => t !== tag))}
+                        className="text-indigo-400 hover:text-indigo-700"
+                        title={`移除标签 ${tag}`}
+                        aria-label={`移除标签 ${tag}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    type="text"
+                    value={tagDraft}
+                    onChange={e => setTagDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addTaskTag(detailTask); }}
+                    onBlur={() => { if (tagDraft.trim()) addTaskTag(detailTask); }}
+                    placeholder="输入标签后按回车添加"
+                    className="h-7 w-40 rounded-md border border-gray-200 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
                 </div>
               </div>
 

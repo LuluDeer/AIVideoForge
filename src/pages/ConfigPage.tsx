@@ -382,8 +382,8 @@ const ConfigPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {(appConfig.customPlatforms ?? []).map((platform, index) => (
-              <CustomPlatformCard key={index} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
+            {(appConfig.customPlatforms ?? []).map(platform => (
+              <CustomPlatformCard key={platform.id} platform={platform} onUpdate={updates => updateCustomPlatform(platform.id, updates)} onRemove={() => removeCustomPlatform(platform.id)} />
             ))}
           </div>
         )}

@@ -1,6 +1,6 @@
 import type { ImageUploadResponse } from '../types';
 import { parseJson } from '../utils/storage';
-import { md5Hex } from '../utils/md5';
+import { md5HexAsync } from '../utils/md5Async';
 
 /**
  * 平台级图片上传配置。所有字段均可选；不填则沿用 geekai 默认值。
@@ -79,7 +79,7 @@ class ImageUploader {
   }
 
   private async computeFileMd5(buffer: ArrayBuffer): Promise<string> {
-    return md5Hex(buffer);
+    return md5HexAsync(buffer);
   }
 
   private async sha1(str: string): Promise<string> {

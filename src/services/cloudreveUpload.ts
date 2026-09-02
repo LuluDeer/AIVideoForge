@@ -10,7 +10,7 @@
  * 基础 URL、令牌服务器和远端目录通过 AppConfig 配置，不再硬编码。
  */
 
-import { md5Hex } from '../utils/md5';
+import { md5HexAsync } from '../utils/md5Async';
 import { DEFAULT_CLOUDREVE_BASE_URL, DEFAULT_CLOUDREVE_TOKEN_SERVER, DEFAULT_CLOUDREVE_REMOTE_DIR } from './configSchema';
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -298,7 +298,7 @@ export class CloudreveUploader {
 
     const token = await this.ensureAccessToken();
     const buffer = await file.arrayBuffer();
-    const md5 = md5Hex(buffer);
+    const md5 = await md5HexAsync(buffer);
     const dotIndex = file.name.lastIndexOf('.');
     const ext = dotIndex >= 0 ? file.name.slice(dotIndex) : '.png';
     const baseName = dotIndex > 0 ? file.name.slice(0, dotIndex) : 'image';
