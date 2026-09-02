@@ -54,6 +54,7 @@ const ConfigPage: React.FC = () => {
       const result = await parseImportedConfigText(String(ev.target?.result ?? ''), appConfig);
       if (!result.ok) {
         setImportSuccess('');
+        setImportWarning('');
         setImportError(result.error);
         return;
       }
@@ -271,7 +272,8 @@ const ConfigPage: React.FC = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">上传 Cookie（ck）</label>
             <div className="relative">
               <input
-                type="text"
+                type="password"
+                autoComplete="off"
                 value={(showUploadCk || !(appConfig.uploadCk ?? '')) ? (appConfig.uploadCk ?? '') : '•••••••••••••••••••••••'}
                 readOnly={!showUploadCk && !!appConfig.uploadCk}
                 onChange={e => updateAppConfig({ uploadCk: e.target.value })}
@@ -294,7 +296,8 @@ const ConfigPage: React.FC = () => {
             <label className="block text-xs font-medium text-gray-600 mb-1">Cloudreve ApiKey（密钥）</label>
             <div className="relative">
               <input
-                type="text"
+                type="password"
+                autoComplete="new-password"
                 value={(showCloudreveApiKey || !(appConfig.cloudreveApiKey ?? '')) ? (appConfig.cloudreveApiKey ?? '') : '•••••••••••••••••••••••'}
                 readOnly={!showCloudreveApiKey && !!appConfig.cloudreveApiKey}
                 onChange={e => updateAppConfig({ cloudreveApiKey: e.target.value })}
@@ -312,6 +315,41 @@ const ConfigPage: React.FC = () => {
               </button>
             </div>
             <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「云存储 Cloudreve」上传图片时使用。</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Cloudreve 实例地址</label>
+              <input
+                type="text"
+                value={appConfig.cloudreveBaseUrl ?? ''}
+                onChange={e => updateAppConfig({ cloudreveBaseUrl: e.target.value })}
+                placeholder="https://cloudreve.example.com"
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+              />
+              <p className="mt-1 text-xs text-gray-500">实例根地址，不含 /api/v4。</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">令牌服务地址</label>
+              <input
+                type="text"
+                value={appConfig.cloudreveTokenServer ?? ''}
+                onChange={e => updateAppConfig({ cloudreveTokenServer: e.target.value })}
+                placeholder="https://cloudreve.example.com/t"
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+              />
+              <p className="mt-1 text-xs text-gray-500">用于用 ApiKey 换取 refresh_token。</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">远端上传目录</label>
+              <input
+                type="text"
+                value={appConfig.cloudreveRemoteDir ?? ''}
+                onChange={e => updateAppConfig({ cloudreveRemoteDir: e.target.value })}
+                placeholder="cloudreve://my/图片"
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+              />
+              <p className="mt-1 text-xs text-gray-500">例如 cloudreve://my/图片，不存在会自动创建。</p>
+            </div>
           </div>
         </div>
       </section>

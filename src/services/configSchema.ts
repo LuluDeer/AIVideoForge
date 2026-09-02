@@ -3,6 +3,11 @@ import type { ApiFormatType, AppConfig, CustomModelDef, CustomPlatformDef, Gener
 export const CURRENT_CONFIG_SCHEMA_VERSION = 2;
 export const MAX_IMPORT_FILE_SIZE = 512 * 1024;
 
+/** Cloudreve 上传相关默认值（配置默认值的单一来源，cloudreveUpload 从这里导入） */
+export const DEFAULT_CLOUDREVE_BASE_URL = 'https://cloudreve.yskj.cc.cd';
+export const DEFAULT_CLOUDREVE_TOKEN_SERVER = 'https://cloudreve.yskj.cc.cd/t';
+export const DEFAULT_CLOUDREVE_REMOTE_DIR = 'cloudreve://my/存储桶测试';
+
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MODES: GenerationMode[] = ['text', 'image', 'imageTail', 'multiImage', 'multiModal'];
 
@@ -16,6 +21,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   httpProxy: '',
   uploadCk: '',
   cloudreveApiKey: '',
+  cloudreveBaseUrl: DEFAULT_CLOUDREVE_BASE_URL,
+  cloudreveTokenServer: DEFAULT_CLOUDREVE_TOKEN_SERVER,
+  cloudreveRemoteDir: DEFAULT_CLOUDREVE_REMOTE_DIR,
   imageUploadMode: 'geekai',
 };
 
@@ -198,6 +206,9 @@ export function normalizeAppConfig(
     httpProxy: includeSystemConfig ? str(value.httpProxy, current.httpProxy) : current.httpProxy,
     uploadCk: includeSecrets ? str(value.uploadCk, current.uploadCk) : current.uploadCk,
     cloudreveApiKey: includeSecrets ? str(value.cloudreveApiKey, current.cloudreveApiKey) : current.cloudreveApiKey,
+    cloudreveBaseUrl: includeSystemConfig ? str(value.cloudreveBaseUrl, current.cloudreveBaseUrl ?? DEFAULT_CLOUDREVE_BASE_URL) : (current.cloudreveBaseUrl ?? DEFAULT_CLOUDREVE_BASE_URL),
+    cloudreveTokenServer: includeSystemConfig ? str(value.cloudreveTokenServer, current.cloudreveTokenServer ?? DEFAULT_CLOUDREVE_TOKEN_SERVER) : (current.cloudreveTokenServer ?? DEFAULT_CLOUDREVE_TOKEN_SERVER),
+    cloudreveRemoteDir: includeSystemConfig ? str(value.cloudreveRemoteDir, current.cloudreveRemoteDir ?? DEFAULT_CLOUDREVE_REMOTE_DIR) : (current.cloudreveRemoteDir ?? DEFAULT_CLOUDREVE_REMOTE_DIR),
     imageUploadMode: includeSystemConfig ? imageUploadMode(value.imageUploadMode, current.imageUploadMode ?? 'geekai') : (current.imageUploadMode ?? 'geekai'),
   });
 }
@@ -214,6 +225,9 @@ export function migrateLegacyConfig(legacy: unknown): AppConfig {
     activePlatformId: legacy.activePlatformId,
     uploadCk: legacy.uploadCk,
     cloudreveApiKey: legacy.cloudreveApiKey,
+    cloudreveBaseUrl: legacy.cloudreveBaseUrl,
+    cloudreveTokenServer: legacy.cloudreveTokenServer,
+    cloudreveRemoteDir: legacy.cloudreveRemoteDir,
     useSystemProxy: legacy.useSystemProxy,
     httpProxy: legacy.httpProxy,
     downloadPath: legacy.downloadPath,

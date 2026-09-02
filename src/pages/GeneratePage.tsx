@@ -518,7 +518,12 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         return null;
       }
       if (_paramKey) setUploadingKey(_paramKey);
-      const uploader = new CloudreveUploader(appConfig.cloudreveApiKey);
+      const uploader = new CloudreveUploader({
+        apiKey: appConfig.cloudreveApiKey,
+        baseUrl: appConfig.cloudreveBaseUrl,
+        tokenServer: appConfig.cloudreveTokenServer,
+        remoteDir: appConfig.cloudreveRemoteDir,
+      });
       try {
         const result = await uploader.uploadImage(file);
         return result ?? null;

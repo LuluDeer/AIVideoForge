@@ -114,6 +114,12 @@ export interface AppConfig {
   uploadCk: string;
   /** Cloudreve 存储服务 ApiKey，用于「上传到 Cloudreve」图传方式 */
   cloudreveApiKey: string;
+  /** Cloudreve 实例基础地址（不含 /api/v4），默认官方示例地址 */
+  cloudreveBaseUrl?: string;
+  /** Cloudreve 令牌服务地址（用于 api_key 换取 refresh_token） */
+  cloudreveTokenServer?: string;
+  /** Cloudreve 远端上传目录，例如 cloudreve://my/图片 */
+  cloudreveRemoteDir?: string;
   /** 旧版全局图片上传模式，仅用于兼容迁移；新配置请使用平台级 imageUploadMode */
   imageUploadMode?: ImageUploadMode;
   /** 用户自定义平台列表 */
