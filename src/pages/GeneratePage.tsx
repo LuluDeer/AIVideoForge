@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw } from 'lucide-react';
+import { Video, Image, AlertCircle, Loader2, Plus, BookOpen, X, ChevronDown, RotateCcw, Sparkles, Copy, Check } from 'lucide-react';
 import AppSelect from '../components/AppSelect';
 import { useConfig } from '../context/useConfig';
 import { useTasks } from '../context/useTasks';
@@ -7,7 +7,7 @@ import { useOfflineQueue } from '../context/useOfflineQueue';
 import type { GenerationMode, VideoGenerationRequest, ParamDef, ParamOption } from '../types';
 import { buildRequestPayload } from '../services/api/payloadBuilders';
 import { resolveParam } from '../services/modelConfigManager';
-import { addCustomPrompt } from '../services/promptLibrary';
+import { addCustomPrompt, getAllPrompts } from '../services/promptLibrary';
 import { containsLocalOnlyImageValue } from '../context/taskUtils';
 import MediaParamField from './generate/MediaParamField';
 import PromptLibraryPanel from './generate/PromptLibraryPanel';
@@ -58,6 +58,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     enqueueOfflineTask,
     removeOfflineTask,
     retryOfflineTask,
+    reorderOfflineTask,
   } = useOfflineQueue();
 
   const [mode, setMode] = useState<GenerationMode>('text');
@@ -72,7 +73,28 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
   const [showRequestPreview, setShowRequestPreview] = useState(false);
   const [pendingReuseData, setPendingReuseData] = useState<PendingReuseData | null>(null);
   const promptSectionRef = useRef<HTMLDivElement | null>(null);
+  const promptLibraryPanelRef = useRef<HTMLDivElement | null>(null);
   const generationControlColumnRef = useRef<HTMLDivElement | null>(null);
+  const promptInputRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+
+  useEffect(() => {
+    const onPageSearch = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string }>).detail;
+      if (detail && detail.tab && detail.tab !== 'generate') return;
+      const el = promptInputRefs.current.find(node => node && !node.disabled) ?? promptInputRefs.current[0];
+      if (el) {
+        el.focus();
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (promptSectionRef.current) {
+        promptSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    window.addEventListener('aivideoforge:focus-page-search', onPageSearch as EventListener);
+    return () => window.removeEventListener('aivideoforge:focus-page-search', onPageSearch as EventListener);
+  }, []);
+  const [promptLibraryCount, setPromptLibraryCount] = useState<number>(() => {
+    try { return getAllPrompts().length; } catch { return 0; }
+  });
 
   // 参数值 state：key = ParamDef.key, value = 用户当前选的值
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
@@ -201,6 +223,19 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     setParamValues(prev => ({ ...prev, [key]: value }));
   };
 
+  const [baseUrlCopied, setBaseUrlCopied] = useState(false);
+  const handleCopyBaseUrl = async () => {
+    const url = activePlatform?.baseUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setBaseUrlCopied(true);
+      setTimeout(() => setBaseUrlCopied(false), 2000);
+    } catch {
+      setError('复制失败，请手动选择 Base URL');
+    }
+  };
+
   const handleModeChange = (newMode: GenerationMode) => {
     setMode(newMode);
     const defaultModel = activePlatform?.models.find(m => m.id === activePlatform.defaultModel && m.modes.includes(newMode));
@@ -234,6 +269,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
     }
     addCustomPrompt('我的提示词', currentPrompt);
     setPromptLibraryVersion(v => v + 1);
+    setPromptLibraryCount(getAllPrompts().length);
     setShowPromptLibrary(true);
     setSuccessMessage(`已保存 Prompt ${promptIndex + 1} 到个人词库，可在词库中编辑分类`);
     setTimeout(() => setSuccessMessage(''), 3000);
@@ -391,7 +427,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
   );
 
   return (
-    <div className="generate-page page-shell">
+    <div className="generate-page page-shell" data-anchor="generate">
       {/* 顶栏 */}
       <div className="page-hero">
         <div>
@@ -410,6 +446,46 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           />
         </div>
       </div>
+
+      {runtimePlatforms.length === 0 && (
+        <div className="mb-6 rounded-2xl border border-dashed border-blue-200 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-8 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-800">还没有可用平台，先到配置页添加一个</h3>
+              <p className="mt-1 text-sm leading-6 text-gray-600">
+                平台是视频生成任务的接口来源。配置一个内置平台（Seedance / 火山方舟、GeekAI、APIZZZ、Kling）或自建一个中转平台后，就可以选择模型、提交生成。
+              </p>
+              <ul className="mt-3 list-disc pl-5 text-xs leading-6 text-gray-500">
+                <li>内置平台：填写 API Key，确认 Base URL 与上传方式即可启用。</li>
+                <li>自定义平台：除 Key 外，还需要配置创建任务、查询任务、查询任务列表、取消任务的接口路径与 API 格式。</li>
+                <li>新模型上线后，可在「配置页 → 模型管理」手动添加模型 ID 并勾选支持的生成模式。</li>
+              </ul>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {onNavigateToConfig && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToConfig}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                  >
+                    去配置平台
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onNavigateToConfig && onNavigateToConfig()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                  title="查看内置平台列表与接入说明"
+                >
+                  查看内置平台
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 flex items-center gap-2 border-l-4 border-red-400 bg-red-50/70 px-3 py-2 text-sm text-red-700 shadow-sm">
@@ -441,6 +517,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
         isProcessing={offlineProcessing}
         onRetry={retryOfflineTask}
         onRemove={removeOfflineTask}
+        onReorder={reorderOfflineTask}
       />
 
       <div className="grid grid-cols-12 gap-4">
@@ -474,7 +551,13 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
           <div className={`generate-card bg-white rounded-lg shadow-sm p-4 ${isGenerating ? 'opacity-50 pointer-events-none' : ''}`}>
             <div onClick={() => setShowParams(v => !v)} className="flex items-center justify-between cursor-pointer mb-3 gap-3">
               <div>
-                <h3 className="text-base font-semibold text-gray-700">生成参数</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-semibold text-gray-700">生成参数</h3>
+                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700" title="当前模式和模型下需要你确认的参数数量">可见 {visibleParams.length} 项</span>
+                  {resolvedParams.length - visibleParams.length > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500" title="这些参数当前模式/模型下已固定或隐藏，将随请求自动提交">自动 {resolvedParams.length - visibleParams.length} 项</span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 mt-1">仅展示当前模式和模型需要你确认的参数，隐藏项会自动随请求提交。</p>
               </div>
               <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${showParams ? '' : '-rotate-90'}`} />
@@ -500,7 +583,24 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   ) : (
                     <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/60 p-3">
                       <p className="text-sm font-medium text-blue-800">当前模式暂无可选模型</p>
-                      <p className="mt-1 text-xs leading-5 text-blue-700">如果官方或中转站已发布新模型，请到配置页为当前平台新增模型 ID，并勾选支持的生成模式。</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-700">
+                        如果官方或中转站已发布新模型，请到配置页为当前平台新增模型 ID（控制台 → 模型市场 → 复制模型 ID），并勾选支持的生成模式。
+                      </p>
+                      {activePlatform?.baseUrl && (
+                        <div className="mt-2 flex items-center gap-2 rounded-lg border border-blue-100 bg-white px-2 py-1.5">
+                          <span className="text-[11px] text-gray-500">平台 Base URL：</span>
+                          <span className="truncate text-[11px] font-mono text-gray-700">{activePlatform.baseUrl}</span>
+                          <button
+                            type="button"
+                            onClick={handleCopyBaseUrl}
+                            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50"
+                            title="复制平台 Base URL，粘贴到平台控制台查询模型 ID"
+                          >
+                            {baseUrlCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            {baseUrlCopied ? '已复制' : '复制'}
+                          </button>
+                        </div>
+                      )}
                       {onNavigateToConfig && (
                         <button type="button" onClick={onNavigateToConfig} className="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">去新增模型</button>
                       )}
@@ -569,10 +669,24 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   type="button"
                   onClick={() => setShowPromptLibrary(!showPromptLibrary)}
                   aria-expanded={showPromptLibrary}
-                  className="prompt-library-trigger flex min-h-9 items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  className={`prompt-library-trigger flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-purple-200 ${
+                    showPromptLibrary
+                      ? 'border-purple-600 bg-purple-600 text-white'
+                      : 'border-purple-200 bg-white text-purple-700 hover:bg-purple-50'
+                  }`}
+                  title={promptLibraryCount > 0 ? `已保存 ${promptLibraryCount} 条提示词，点击打开词库` : '点击打开词库，内置与个人保存的提示词都在这里'}
                 >
                   <BookOpen className="w-3.5 h-3.5" />
                   词库
+                  <span
+                    className={`inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-[14px] ${
+                      showPromptLibrary
+                        ? 'bg-white/25 text-white'
+                        : 'bg-purple-100 text-purple-700'
+                    }`}
+                  >
+                    {promptLibraryCount}
+                  </span>
                 </button>
               </div>
             </div>
@@ -583,6 +697,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <textarea
+                        ref={el => { promptInputRefs.current[index] = el; }}
                         value={prompt}
                         onChange={e => {
                           const next = [...promptList];
@@ -631,6 +746,18 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
                 </div>
               ))}
             </div>
+
+            {showPromptLibrary && (
+              <div ref={promptLibraryPanelRef} className="mt-4 border-t border-gray-100 pt-4">
+                <PromptLibraryPanel
+                  anchorRef={promptSectionRef}
+                  promptCount={promptList.length}
+                  refreshVersion={promptLibraryVersion}
+                  onInsertPrompt={handleInsertPrompt}
+                  onClose={() => setShowPromptLibrary(false)}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -679,7 +806,7 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
             <button
               onClick={isGenerating ? handleStopGenerate : handleGenerate}
               disabled={!isGenerating && !canGenerate}
-              className="generate-submit-button flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold leading-normal text-white shadow-sm transition-colors hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:from-gray-300 disabled:to-gray-400"
+              className="generate-submit-button flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold leading-normal text-white shadow-sm transition-colors hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-500 disabled:shadow-none disabled:opacity-70"
               title={isGenerating ? '停止继续提交新任务，已提交任务仍会保留' : '提交生成任务'}
             >
               {isGenerating ? (
@@ -717,16 +844,6 @@ const GeneratePage: React.FC<GeneratePageProps> = ({ onNavigateToTasks, onNaviga
               )}
             </div>
           </div>
-
-          {showPromptLibrary && (
-            <PromptLibraryPanel
-              anchorRef={promptSectionRef}
-              promptCount={promptList.length}
-              refreshVersion={promptLibraryVersion}
-              onInsertPrompt={handleInsertPrompt}
-              onClose={() => setShowPromptLibrary(false)}
-            />
-          )}
         </div>
       </div>
     </div>

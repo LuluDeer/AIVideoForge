@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Download, Trash2, ExternalLink, Loader2, Video, CheckCircle2, Clock,
-  Copy, Check, RefreshCw, XCircle, CloudDownload, Film, Search, ArrowUpDown,
+  Copy, Check, RefreshCw, XCircle, CloudDownload, Film, Search,
   X, CheckSquare, Square, RotateCcw, FolderOpen
 } from 'lucide-react';
 import { useTasks } from '../context/useTasks';
@@ -21,7 +21,7 @@ type SortField = 'created_at' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 const TasksPage: React.FC = () => {
-  const { tasks, removeTask, clearTasks, updateTask, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask, storageWarning } = useTasks();
+  const { tasks, removeTask, updateTask, refreshTask, cancelTask, fetchRemoteTasks, retryTask, requestReuseTask, storageWarning } = useTasks();
   const { runtimePlatforms, activePlatform } = useConfig();
 
   const getPlatformName = (platformId: string): string =>
@@ -60,12 +60,28 @@ const TasksPage: React.FC = () => {
   const [openPathMessage, setOpenPathMessage] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState('');
 
+  // 清空对话框：范围选项 + 二次确认
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearScope, setClearScope] = useState<'all' | 'failed' | 'older'>('all');
+  const [clearDays, setClearDays] = useState<number>(30);
+  const [clearKeyword, setClearKeyword] = useState('');
+
   React.useEffect(() => {
     const focus = () => searchInputRef.current?.focus();
     const refresh = () => { void handleSyncRemote(); };
+    const onPageSearch = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string }>).detail;
+      if (detail && detail.tab && detail.tab !== 'tasks') return;
+      focus();
+    };
     window.addEventListener('aivideoforge:focus-task-search', focus);
     window.addEventListener('aivideoforge:refresh-tasks', refresh);
-    return () => { window.removeEventListener('aivideoforge:focus-task-search', focus); window.removeEventListener('aivideoforge:refresh-tasks', refresh); };
+    window.addEventListener('aivideoforge:focus-page-search', onPageSearch as EventListener);
+    return () => {
+      window.removeEventListener('aivideoforge:focus-task-search', focus);
+      window.removeEventListener('aivideoforge:refresh-tasks', refresh);
+      window.removeEventListener('aivideoforge:focus-page-search', onPageSearch as EventListener);
+    };
   }, []);
 
   const getTaskPlatform = (task: Task) => task.platformId
@@ -328,6 +344,38 @@ const TasksPage: React.FC = () => {
     setSelectedIds(new Set());
   };
 
+  const collectClearTargets = (): Task[] => {
+    if (clearScope === 'all') return tasks;
+    if (clearScope === 'failed') {
+      return tasks.filter(t => t.status === 'failed' || t.status === 'cancelled');
+    }
+    // older than N days, optionally narrowed by keyword
+    const cutoff = Date.now() - clearDays * 24 * 60 * 60 * 1000;
+    const kw = clearKeyword.trim().toLowerCase();
+    return tasks.filter(t => {
+      if (t.created_at >= cutoff) return false;
+      if (!kw) return true;
+      return (t.prompt ?? '').toLowerCase().includes(kw)
+        || (t.model ?? '').toLowerCase().includes(kw)
+        || t.id.toLowerCase().includes(kw);
+    });
+  };
+
+  const clearTargets = collectClearTargets();
+  const clearPreviewSample = clearTargets.slice(0, 3);
+  const handleConfirmClear = () => {
+    if (clearTargets.length === 0) return;
+    clearTargets.forEach(t => removeTask(t.id));
+    setSelectedIds(prev => {
+      const remaining = new Set<string>();
+      prev.forEach(id => { if (!clearTargets.some(t => t.id === id)) remaining.add(id); });
+      return remaining;
+    });
+    setSyncMessage(`已清理 ${clearTargets.length} 个任务`);
+    setTimeout(() => setSyncMessage(null), 3000);
+    setClearOpen(false);
+  };
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -350,7 +398,7 @@ const TasksPage: React.FC = () => {
   };
 
   return (
-    <div className="tasks-page page-shell">
+    <div className="tasks-page page-shell" data-anchor="tasks">
       <div>
         {/* 顶栏 */}
         <div className="page-hero">
@@ -377,12 +425,12 @@ const TasksPage: React.FC = () => {
             )}
             {tasks.length > 0 && (
               <button
-                onClick={() => { if (confirm(`确认清空全部 ${tasks.length} 个任务？此操作不可恢复`)) clearTasks(); }}
-                className="flex items-center gap-2 px-4 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                title="清空本地任务历史，不会取消云端任务"
+                onClick={() => { setClearScope('all'); setClearKeyword(''); setClearOpen(true); }}
+                className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                title="按范围清空本地任务历史（不会取消云端任务）"
               >
-                <Trash2 className="w-4 h-4" />
-                清空全部
+                <Trash2 className="w-3.5 h-3.5" />
+                清空任务…
               </button>
             )}
           </div>
@@ -403,7 +451,7 @@ const TasksPage: React.FC = () => {
         )}
 
         {/* 状态统计 */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           {statusFilters.map(s => (
             <button
               key={s.value}
@@ -421,8 +469,8 @@ const TasksPage: React.FC = () => {
           ))}
         </div>
 
-        {/* 搜索栏 + 筛选条件 */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
+        {/* 搜索栏 + 排序 + 日期 */}
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
@@ -441,70 +489,112 @@ const TasksPage: React.FC = () => {
             onChange={(v) => { setDateFrom(v.from); setDateTo(v.to); }}
           />
 
-          <AppSelect
-            value={platformFilter}
-            onChange={e => setPlatformFilter(e.target.value)}
-            className="min-w-[120px]"
-            options={[{ value: 'all', label: '全部平台' }, ...runtimePlatforms.map(p => ({ value: p.id, label: p.name }))]} />
-          <AppSelect
-            value={modeFilter}
-            onChange={e => setModeFilter(e.target.value)}
-            className="min-w-[120px]"
-            options={[{ value: 'all', label: '全部模式' }, ...(['text', 'image', 'imageTail', 'multiImage', 'multiModal'] as Task['mode'][]).map(mode => ({ value: mode, label: getModeText(mode) }))]} />
-          <AppSelect
-            value={tagFilter}
-            onChange={e => setTagFilter(e.target.value)}
-            className="min-w-[120px]"
-            options={[{ value: 'all', label: '全部标签' }, ...Array.from(new Set(tasks.flatMap(task => task.tags ?? []))).sort().map(tag => ({ value: tag, label: tag }))]} />
-
-          <button
-            onClick={() => toggleSort('created_at')}
-            className="task-control flex items-center gap-1 px-3 h-10 text-sm rounded-lg whitespace-nowrap"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            时间
-            {sortField === 'created_at' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
-          <button
-            onClick={() => toggleSort('status')}
-            className="task-control flex items-center gap-1 px-3 h-10 text-sm rounded-lg whitespace-nowrap"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            状态
-            {sortField === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
-          {selectedIds.size > 0 && (
+          <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
+            <span className="px-2 text-xs text-gray-500">排序</span>
             <button
-              onClick={handleBatchDelete}
-              className="flex items-center gap-1 px-3 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600"
+              onClick={() => toggleSort('created_at')}
+              className={`flex items-center gap-1 rounded-md px-2.5 h-8 text-xs font-medium ${
+                sortField === 'created_at' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+              }`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              删除选中 ({selectedIds.size})
+              时间
+              {sortField === 'created_at' && (sortOrder === 'asc' ? '↑' : '↓')}
             </button>
-          )}
-          {visibleFailedTasks.length > 0 && (
             <button
-              onClick={handleBatchRetry}
-              disabled={batchRetrying}
-              className="flex items-center gap-1 px-3 py-2 text-sm text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              onClick={() => toggleSort('status')}
+              className={`flex items-center gap-1 rounded-md px-2.5 h-8 text-xs font-medium ${
+                sortField === 'status' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+              }`}
             >
-              {batchRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-              重试失败 ({visibleFailedTasks.length})
+              状态
+              {sortField === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
             </button>
-          )}
-          {batchRetryMsg && (
-            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">{batchRetryMsg}</span>
-          )}
-          {retryMessage && (
-            <span className={`text-xs px-2 py-1 rounded ${retryMessage.includes('失败') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{retryMessage}</span>
-          )}
-          {copyError && (
-            <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700">{copyError}</span>
-          )}
-          {openPathMessage && (
-            <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700">{openPathMessage}</span>
-          )}
+          </div>
         </div>
+
+        {/* 平台 / 模式 / 标签筛选 + 批量操作 */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-500 mr-1">筛选</span>
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">平台</span>
+            <AppSelect
+              value={platformFilter}
+              onChange={e => setPlatformFilter(e.target.value)}
+              className="min-w-[120px]"
+              options={[{ value: 'all', label: '全部平台' }, ...runtimePlatforms.map(p => ({ value: p.id, label: p.name }))]} />
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">模式</span>
+            <AppSelect
+              value={modeFilter}
+              onChange={e => setModeFilter(e.target.value)}
+              className="min-w-[120px]"
+              options={[{ value: 'all', label: '全部模式' }, ...(['text', 'image', 'imageTail', 'multiImage', 'multiModal'] as Task['mode'][]).map(mode => ({ value: mode, label: getModeText(mode) }))]} />
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">标签</span>
+            <AppSelect
+              value={tagFilter}
+              onChange={e => setTagFilter(e.target.value)}
+              className="min-w-[120px]"
+              options={[{ value: 'all', label: '全部标签' }, ...Array.from(new Set(tasks.flatMap(task => task.tags ?? []))).sort().map(tag => ({ value: tag, label: tag }))]} />
+          </label>
+
+          <div className="ml-auto flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                className="flex items-center gap-1 px-3 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                删除选中 ({selectedIds.size})
+              </button>
+            )}
+            {visibleFailedTasks.length > 0 && (
+              <button
+                onClick={handleBatchRetry}
+                disabled={batchRetrying}
+                className="flex items-center gap-1 px-3 py-2 text-sm text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              >
+                {batchRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                重试失败 ({visibleFailedTasks.length})
+              </button>
+            )}
+          </div>
+        </div>
+
+        {(searchQuery || dateFrom || dateTo || platformFilter !== 'all' || modeFilter !== 'all' || tagFilter !== 'all') && (
+          <div className="mb-3 flex items-center gap-2 text-xs">
+            <span className="text-gray-500">已启用筛选</span>
+            <button
+              onClick={() => {
+                setSearchQuery(''); setDateFrom(''); setDateTo('');
+                setPlatformFilter('all'); setModeFilter('all'); setTagFilter('all');
+              }}
+              className="rounded-full bg-gray-100 px-2.5 py-1 text-gray-600 hover:bg-gray-200"
+            >
+              清除全部 ×
+            </button>
+          </div>
+        )}
+
+        {/* 任务操作的瞬时消息 */}
+        {(batchRetryMsg || retryMessage || copyError || openPathMessage) && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {batchRetryMsg && (
+              <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">{batchRetryMsg}</span>
+            )}
+            {retryMessage && (
+              <span className={`text-xs px-2 py-1 rounded ${retryMessage.includes('失败') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{retryMessage}</span>
+            )}
+            {copyError && (
+              <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700">{copyError}</span>
+            )}
+            {openPathMessage && (
+              <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700">{openPathMessage}</span>
+            )}
+          </div>
+        )}
 
         {/* 模型筛选 */}
         {Object.keys(modelStats).length > 0 && (
@@ -547,16 +637,56 @@ const TasksPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid gap-3">
-            {/* 全选 */}
-            <div className="flex items-center gap-2 px-2">
-              <button onClick={toggleSelectAll} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700" title="选择或取消选择当前列表中的全部任务">
-                {selectedIds.size === filteredTasks.length && filteredTasks.length > 0
-                  ? <CheckSquare className="w-4 h-4 text-blue-500" />
-                  : <Square className="w-4 h-4" />
-                }
-                全选
-              </button>
-            </div>
+            {/* 浮动批量操作条：选中时粘性显示 */}
+            {selectedIds.size > 0 && (
+              <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/95 px-3 py-2 text-sm shadow-sm backdrop-blur">
+                <span className="font-medium text-blue-800">已选 {selectedIds.size} 个任务</span>
+                <span className="text-xs text-blue-600">（共 {filteredTasks.length} 个）</span>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="rounded-md border border-blue-200 bg-white px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    {selectedIds.size === filteredTasks.length ? '取消全选' : '全选当前列表'}
+                  </button>
+                  {visibleFailedTasks.length > 0 && (
+                    <button
+                      onClick={handleBatchRetry}
+                      disabled={batchRetrying}
+                      className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {batchRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                      重试失败 ({visibleFailedTasks.length})
+                    </button>
+                  )}
+                  <button
+                    onClick={handleBatchDelete}
+                    className="flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    删除选中
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                  >
+                    清除选择
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* 全选（无选中时显示） */}
+            {selectedIds.size === 0 && (
+              <div className="flex items-center gap-2 px-2">
+                <button onClick={toggleSelectAll} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700" title="选择或取消选择当前列表中的全部任务">
+                  {selectedIds.size === filteredTasks.length && filteredTasks.length > 0
+                    ? <CheckSquare className="w-4 h-4 text-blue-500" />
+                    : <Square className="w-4 h-4" />
+                  }
+                  全选
+                </button>
+              </div>
+            )}
             {renderedTasks.map(task => (
               <div
                 key={task.id}
@@ -793,22 +923,66 @@ const TasksPage: React.FC = () => {
           onClick={() => setDetailTaskId(null)}
         >
           <div
-            className="task-detail-dialog bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            className="task-detail-dialog flex w-full max-w-3xl max-h-[80vh] flex-col overflow-hidden rounded-xl bg-white shadow-2xl md:flex-row"
             onClick={e => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-800">任务详情</h3>
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3 md:hidden">
+              <h3 className="text-base font-semibold text-gray-800">任务详情</h3>
               <button
                 onClick={() => setDetailTaskId(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                aria-label="关闭任务详情"
               >
-                <X className="w-5 h-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
+            {/* 桌面端左侧锚点导航 */}
+            <nav className="hidden w-44 shrink-0 border-r border-gray-100 bg-gray-50/60 p-3 md:flex md:flex-col">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">详情导航</h3>
+                <button
+                  onClick={() => setDetailTaskId(null)}
+                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  aria-label="关闭任务详情"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <ul className="space-y-0.5 overflow-y-auto text-sm">
+                {[
+                  { id: 'detail-summary', label: '基本信息' },
+                  { id: 'detail-tags', label: '标签' },
+                  { id: 'detail-autodownload', label: '自动下载' },
+                  { id: 'detail-prompt', label: 'Prompt' },
+                  { id: 'detail-enhanced', label: '增强提示词' },
+                  { id: 'detail-poll', label: '轮询提示' },
+                  { id: 'detail-error', label: '错误信息' },
+                  { id: 'detail-retry', label: '重试历史' },
+                  { id: 'detail-images', label: '参考图片' },
+                  { id: 'detail-video', label: '视频结果' },
+                ].map(s => (
+                  <li key={s.id}>
+                    <a
+                      href={`#${s.id}`}
+                      onClick={e => {
+                        e.preventDefault();
+                        const el = document.getElementById(s.id);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="block rounded-md px-2.5 py-1.5 text-gray-600 hover:bg-white hover:text-blue-700"
+                    >
+                      {s.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
             {/* 弹窗内容 */}
-            <div className="task-detail-content p-4 space-y-4">
+            <div className="task-detail-content flex-1 space-y-4 overflow-y-auto p-4">
+              <div id="detail-summary" />
               {/* 基本信息 */}
               <div className="task-detail-meta grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -850,6 +1024,7 @@ const TasksPage: React.FC = () => {
                 </div>
               </div>
 
+              <div id="detail-tags" />
               {/* 标签管理 */}
               <div>
                 <span className="text-sm text-gray-500">标签</span>
@@ -879,6 +1054,7 @@ const TasksPage: React.FC = () => {
                 </div>
               </div>
 
+              <div id="detail-autodownload" />
               {detailTask.auto_download && (() => {
                 const badge = getAutoDownloadBadge(detailTask);
                 return (
@@ -907,12 +1083,14 @@ const TasksPage: React.FC = () => {
                 );
               })()}
 
+              <div id="detail-prompt" />
               {/* Prompt */}
               <div>
                 <span className="text-sm text-gray-500">Prompt</span>
                 <div className="task-detail-value mt-1 p-3 bg-gray-50 rounded-lg border text-sm text-gray-800 whitespace-pre-wrap">{detailTask.prompt || '(空)'}</div>
               </div>
 
+              <div id="detail-enhanced" />
               {/* 增强提示词 */}
               {detailTask.enhanced_prompt && (
                 <div>
@@ -921,6 +1099,7 @@ const TasksPage: React.FC = () => {
                 </div>
               )}
 
+              <div id="detail-poll" />
               {/* 轮询提示 */}
               {detailTask.last_poll_error && (
                 <div>
@@ -929,6 +1108,7 @@ const TasksPage: React.FC = () => {
                 </div>
               )}
 
+              <div id="detail-error" />
               {/* 错误信息 */}
               {detailTask.error_message && (
                 <div>
@@ -937,6 +1117,7 @@ const TasksPage: React.FC = () => {
                 </div>
               )}
 
+              <div id="detail-retry" />
               {/* 重试历史 */}
               {detailTask.retry_history && detailTask.retry_history.length > 0 && (
                 <div>
@@ -966,6 +1147,7 @@ const TasksPage: React.FC = () => {
               )}
 
               {/* 参考图 */}
+              <div id="detail-images" />
               {(detailTask.image_url || detailTask.image_tail_url || (detailTask.image_urls && detailTask.image_urls.length > 0)) && (
                 <div>
                   <span className="text-sm text-gray-500">参考图片</span>
@@ -983,6 +1165,7 @@ const TasksPage: React.FC = () => {
                 </div>
               )}
 
+              <div id="detail-video" />
               {/* 视频结果 */}
               {detailTask.video_url ? (
                 <div>
@@ -1023,6 +1206,124 @@ const TasksPage: React.FC = () => {
                 </div>
               )}
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 清空任务对话框 */}
+      {clearOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setClearOpen(false)}
+        >
+          <div
+            className="task-clear-dialog bg-white rounded-xl shadow-2xl max-w-lg w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 border-b border-gray-100 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <Trash2 className="h-4 w-4" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-gray-800">清空本地任务</h3>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  只会清空本地任务历史，不会取消云端任务或删除已下载的视频文件。
+                </p>
+              </div>
+              <button
+                onClick={() => setClearOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                aria-label="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 p-4">
+              <div className="grid grid-cols-1 gap-2">
+                {([
+                  { value: 'all', label: '全部任务', desc: `本地全部 ${tasks.length} 条` },
+                  { value: 'failed', label: '仅失败与已取消', desc: `失败 + 已取消共 ${tasks.filter(t => t.status === 'failed' || t.status === 'cancelled').length} 条` },
+                  { value: 'older', label: '早于指定天数', desc: `可与关键字组合` },
+                ] as { value: 'all' | 'failed' | 'older'; label: string; desc: string }[]).map(opt => (
+                  <label
+                    key={opt.value}
+                    className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                      clearScope === opt.value ? 'border-red-300 bg-red-50/50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="clear-scope"
+                      value={opt.value}
+                      checked={clearScope === opt.value}
+                      onChange={() => setClearScope(opt.value)}
+                      className="mt-1 h-3.5 w-3.5 accent-red-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-800">{opt.label}</div>
+                      <div className="text-xs text-gray-500">{opt.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {clearScope === 'older' && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-600">清理</span>
+                    <select
+                      value={clearDays}
+                      onChange={e => setClearDays(Number(e.target.value))}
+                      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+                    >
+                      {[7, 30, 90, 180].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <span className="text-gray-600">天前创建的任务</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={clearKeyword}
+                    onChange={e => setClearKeyword(e.target.value)}
+                    placeholder="可选：进一步按 Prompt / 模型 / 任务 ID 过滤"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+              )}
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {clearTargets.length === 0
+                  ? '当前范围没有匹配的任务，无需清理。'
+                  : (
+                    <>
+                      <span className="font-semibold">将清空 {clearTargets.length} 个任务</span>
+                      {clearPreviewSample.length > 0 && (
+                        <span className="block mt-1 truncate text-amber-700">
+                          样例：{clearPreviewSample.map(t => t.id).join('、')}{clearTargets.length > clearPreviewSample.length ? '…' : ''}
+                        </span>
+                      )}
+                    </>
+                  )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 p-4">
+              <button
+                onClick={() => setClearOpen(false)}
+                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmClear}
+                disabled={clearTargets.length === 0}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none"
+              >
+                确认清空 {clearTargets.length > 0 ? `(${clearTargets.length})` : ''}
+              </button>
             </div>
           </div>
         </div>

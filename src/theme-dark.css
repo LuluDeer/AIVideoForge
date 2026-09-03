@@ -123,6 +123,27 @@
   box-shadow: var(--shadow-sm) !important;
 }
 
+/* P2 改造：浮动批量操作条、详情侧边导航、新手引导左侧、配置二级导航在暗色下的可读性 */
+[data-theme='dark'] .tasks-page .sticky,
+[data-theme='dark'] .task-detail-dialog > nav {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+[data-theme='dark'] .onboarding-dialog .bg-gradient-to-br {
+  background:
+    linear-gradient(135deg, rgba(70, 84, 216, 0.85), rgba(20, 184, 166, 0.7)) !important;
+}
+[data-theme='dark'] .onboarding-dialog img {
+  background: rgba(255, 255, 255, 0.06);
+}
+[data-theme='dark'] kbd {
+  color: var(--text);
+  background: var(--control-bg);
+  border-color: var(--border);
+}
+[data-theme='dark'] .onboarding-figure .bg-white\/15,
+[data-theme='dark'] .onboarding-figure .bg-white\/10 { background: rgba(255, 255, 255, 0.08) !important; }
+
 [data-theme='dark'] .bg-white { background-color: var(--surface-solid) !important; }
 [data-theme='dark'] .bg-gray-50,
 [data-theme='dark'] .bg-gray-100 { background-color: var(--surface-soft) !important; }

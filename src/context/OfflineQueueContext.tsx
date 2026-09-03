@@ -171,6 +171,20 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
     });
   }, [saveQueue]);
 
+  const reorderOfflineTask = useCallback((id: string, direction: 'up' | 'down') => {
+    setQueue(prev => {
+      const idx = prev.findIndex(q => q.id === id);
+      if (idx === -1) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = prev.slice();
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item);
+      saveQueue(next);
+      return next;
+    });
+  }, [saveQueue]);
+
   const clearOfflineQueue = useCallback(() => {
     setQueue([]);
     saveQueue([]);
@@ -235,7 +249,8 @@ export const OfflineQueueProvider: React.FC<{ children: ReactNode }> = ({ childr
     clearOfflineQueue,
     retryOfflineTask,
     processOfflineQueue,
-  }), [queue, isOnline, isProcessing, enqueueOfflineTask, removeOfflineTask, clearOfflineQueue, retryOfflineTask, processOfflineQueue]);
+    reorderOfflineTask,
+  }), [queue, isOnline, isProcessing, enqueueOfflineTask, removeOfflineTask, clearOfflineQueue, retryOfflineTask, processOfflineQueue, reorderOfflineTask]);
 
   return <OfflineQueueContext.Provider value={contextValue}>{children}</OfflineQueueContext.Provider>;
 };

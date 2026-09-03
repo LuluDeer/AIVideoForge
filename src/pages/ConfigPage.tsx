@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle, Download, Eye, EyeOff, FolderOpen, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Download, Eye, EyeOff, FolderOpen, Plus, Save, Trash2, Upload, X, Layers, ServerCog, Cog, ShieldCheck, DownloadCloud, Globe, KeyRound, Cloud, RefreshCw, Info } from 'lucide-react';
 import { useConfig } from '../context/useConfig';
 import { PLATFORM_DEFS } from '../services/modelTemplates';
 import { MAX_IMPORT_FILE_SIZE, SAFE_CONFIG_EXPORT_FILENAME, parseImportedConfigText, serializeConfigForExport } from '../services/configImportExport';
@@ -9,6 +9,7 @@ import BuiltinPlatformCard from './config/BuiltinPlatformCard';
 import CustomPlatformCard from './config/CustomPlatformCard';
 import { emptyPlatform } from './config/utils';
 import UpdatePanel from '../components/UpdatePanel';
+import SettingsCard from '../components/SettingsCard';
 
 const ConfigPage: React.FC = () => {
   const {
@@ -30,6 +31,7 @@ const ConfigPage: React.FC = () => {
   const [folderMessage, setFolderMessage] = useState('');
   const [showUploadCk, setShowUploadCk] = useState(false);
   const [showCloudreveApiKey, setShowCloudreveApiKey] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'builtin' | 'custom' | 'system'>('overview');
 
   const handleExport = () => {
     const blob = new Blob([serializeConfigForExport(appConfig)], { type: 'application/json' });
@@ -138,7 +140,7 @@ const ConfigPage: React.FC = () => {
   };
 
   return (
-    <div className="config-page page-shell">
+    <div className="config-page page-shell" data-anchor="config">
       <div className="page-hero">
         <div>
           <h2>配置与模型</h2>
@@ -199,84 +201,125 @@ const ConfigPage: React.FC = () => {
         </div>
       )}
 
+      {/* 二级导航 */}
+      <nav className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-gray-200 bg-white p-1.5" aria-label="配置子页">
+        {([
+          { id: 'overview', label: '概览与导入导出', icon: ShieldCheck },
+          { id: 'builtin', label: '内置平台', icon: ServerCog },
+          { id: 'custom', label: '自定义平台', icon: Layers },
+          { id: 'system', label: '系统设置', icon: Cog },
+        ] as const).map(tab => {
+          const Icon = tab.icon;
+          const active = activeSubTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveSubTab(tab.id)}
+              aria-pressed={active}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                active ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
 
-      <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">系统设置</h3>
-        <div className="mb-4"><UpdatePanel /></div>
-        <div className="config-settings-panel space-y-4">
-          <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-sm font-medium text-gray-700">自动下载视频</span>
-                  <span className="text-xs leading-5 text-gray-500">开启后，新任务会保存当前下载目录快照，后续修改全局目录不影响既有任务。</span>
-                </div>
-              </div>
+      {activeSubTab === 'system' && (
+      <section className="config-platforms-section mb-6">
+        <h3 className="mb-3 text-sm font-semibold text-gray-700">系统设置</h3>
+        <p className="mb-3 text-xs text-gray-500">按主题划分的常用设置卡片。点击右上角按钮可随时切换状态；危险区操作需要二次确认。</p>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {/* 自动下载 */}
+          <SettingsCard
+            icon={<DownloadCloud className="h-4 w-4" />}
+            title="自动下载视频"
+            description="开启后，新任务会保存当前下载目录快照；后续修改全局目录不影响既有任务。"
+            badge={appConfig.autoDownload ? '已开启' : '未启用'}
+            badgeTone={appConfig.autoDownload ? 'success' : 'neutral'}
+            actions={
               <button
                 type="button"
                 role="switch"
                 aria-checked={appConfig.autoDownload}
                 onClick={() => updateAppConfig({ autoDownload: !appConfig.autoDownload })}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.autoDownload ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.autoDownload ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
                 title={appConfig.autoDownload ? '关闭自动下载' : '开启自动下载'}
               >
                 <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appConfig.autoDownload ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            }
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 type="text"
                 value={appConfig.downloadPath ?? ''}
                 onChange={e => updateAppConfig({ downloadPath: e.target.value })}
                 placeholder="请选择自动下载目录"
-                className="min-w-0 flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono bg-white"
+                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-mono text-sm"
               />
-              <button onClick={handleSelectDownloadPath} className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 bg-white border border-blue-100 rounded-lg hover:bg-blue-50">
-                <FolderOpen className="w-3.5 h-3.5" />选择目录
+              <button onClick={handleSelectDownloadPath} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-100 bg-white px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50">
+                <FolderOpen className="h-3.5 w-3.5" />选择目录
               </button>
-              <button onClick={handleOpenDownloadPath} disabled={!appConfig.downloadPath} className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+              <button onClick={handleOpenDownloadPath} disabled={!appConfig.downloadPath} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                 打开目录
               </button>
             </div>
-            {appConfig.autoDownload && !appConfig.downloadPath && <p className="mt-2 text-xs text-red-500">请先选择下载目录，否则新任务不会启用自动下载。</p>}
-            {folderMessage && <p className="mt-2 text-xs text-green-600">{folderMessage}</p>}
-          </div>
+            {appConfig.autoDownload && !appConfig.downloadPath && <p className="flex items-center gap-1 text-[11px] text-red-500"><AlertTriangle className="h-3 w-3" />请先选择下载目录，否则新任务不会启用自动下载。</p>}
+            {folderMessage && <p className="flex items-center gap-1 text-[11px] text-emerald-600"><CheckCircle className="h-3 w-3" />{folderMessage}</p>}
+          </SettingsCard>
 
-          <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-sm font-medium text-gray-700">使用系统代理</span>
-                  <span className="text-xs leading-5 text-gray-500">关闭时强制直连，避免系统代理影响视频生成；开启后使用 Windows / 系统代理设置。</span>
-                </div>
-              </div>
+          {/* 网络代理 */}
+          <SettingsCard
+            icon={<Globe className="h-4 w-4" />}
+            title="网络代理"
+            description="关闭时强制直连，避免系统代理影响视频生成；开启后使用系统代理设置。"
+            badge={appConfig.useSystemProxy ? '系统代理' : '直连'}
+            badgeTone={appConfig.useSystemProxy ? 'info' : 'neutral'}
+            actions={
               <button
                 type="button"
                 role="switch"
                 aria-checked={appConfig.useSystemProxy}
                 onClick={() => updateAppConfig({ useSystemProxy: !appConfig.useSystemProxy })}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.useSystemProxy ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${appConfig.useSystemProxy ? 'border-blue-200 bg-blue-500' : 'border-gray-200 bg-gray-200'}`}
                 title={appConfig.useSystemProxy ? '关闭系统代理' : '开启系统代理'}
               >
                 <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${appConfig.useSystemProxy ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
-            </div>
-            <p className="system-proxy-note text-xs text-gray-500 bg-blue-50/70 border border-blue-100 rounded-lg px-2 py-1 mt-3">保存后会立即同步到桌面端网络会话；已提交或正在轮询的任务无需刷新或重新提交，后续轮询请求会使用新的网络设置。</p>
-          </div>
+            }
+          >
+            <p className="flex items-start gap-1.5 rounded-lg border border-blue-100 bg-blue-50/70 px-2 py-1.5 text-[11px] leading-5 text-gray-600">
+              <Info className="mt-0.5 h-3 w-3 shrink-0 text-blue-500" />
+              保存后立即同步到桌面端网络会话；已提交或正在轮询的任务无需重新提交。
+            </p>
+            <details className="rounded-lg border border-gray-200 bg-white px-2 py-1.5">
+              <summary className="cursor-pointer select-none text-[11px] font-medium text-gray-600">手动 HTTP 代理（兼容旧配置）</summary>
+              <div className="mt-2 space-y-1.5">
+                <input
+                  type="text"
+                  value={appConfig.httpProxy ?? ''}
+                  onChange={e => updateAppConfig({ httpProxy: e.target.value })}
+                  placeholder="例如：http://127.0.0.1:7890"
+                  className="w-full rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs"
+                />
+                <p className="text-[10px] leading-4 text-gray-500">当前版本优先使用上方开关；此字段仅保留用于兼容旧配置。</p>
+              </div>
+            </details>
+          </SettingsCard>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">手动 HTTP 代理（兼容旧配置）</label>
-            <input
-              type="text"
-              value={appConfig.httpProxy ?? ''}
-              onChange={e => updateAppConfig({ httpProxy: e.target.value })}
-              placeholder="例如：http://127.0.0.1:7890"
-              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
-            />
-            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 mt-2">当前版本优先使用上方「使用系统代理」开关：关闭时直连，开启时读取系统代理。此字段仅保留用于兼容旧配置。</p>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">上传 Cookie（ck）</label>
+          {/* 上传 Cookie */}
+          <SettingsCard
+            icon={<KeyRound className="h-4 w-4" />}
+            title="上传 Cookie（ck）"
+            description="GeekAI 平台素材上传时使用；其他平台无需填写。"
+            badge={appConfig.uploadCk ? '已配置' : '未配置'}
+            badgeTone={appConfig.uploadCk ? 'success' : 'warning'}
+          >
             <div className="relative">
               <input
                 type="password"
@@ -285,22 +328,31 @@ const ConfigPage: React.FC = () => {
                 readOnly={!showUploadCk && !!appConfig.uploadCk}
                 onChange={e => updateAppConfig({ uploadCk: e.target.value })}
                 placeholder="粘贴 GeekAI 登录后的 ck cookie 值..."
-                className="w-full pr-12 px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 pr-10 font-mono text-sm"
               />
               <button
                 type="button"
                 onClick={() => setShowUploadCk(v => !v)}
-                className="cookie-visibility-button absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                className="cookie-visibility-button absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
                 title={showUploadCk ? '隐藏 Cookie' : '显示 Cookie'}
                 aria-label={showUploadCk ? '隐藏 Cookie' : '显示 Cookie'}
               >
-                {showUploadCk ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showUploadCk ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「GeekAI CDN」或上传视频/音频到 GeekAI 获取 URL 时使用。</p>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Cloudreve ApiKey（密钥）</label>
+            <p className="text-[11px] leading-5 text-amber-700">
+              仅在某个平台的图片上传方式选择「GeekAI CDN」或上传视频/音频到 GeekAI 获取 URL 时使用。
+            </p>
+          </SettingsCard>
+
+          {/* Cloudreve */}
+          <SettingsCard
+            icon={<Cloud className="h-4 w-4" />}
+            title="Cloudreve 云存储"
+            description="使用 Cloudreve 自托管对象存储作为素材上传目的地。"
+            badge={appConfig.cloudreveApiKey && appConfig.cloudreveBaseUrl ? '就绪' : '未配置'}
+            badgeTone={appConfig.cloudreveApiKey && appConfig.cloudreveBaseUrl ? 'success' : 'warning'}
+          >
             <div className="relative">
               <input
                 type="password"
@@ -309,65 +361,100 @@ const ConfigPage: React.FC = () => {
                 readOnly={!showCloudreveApiKey && !!appConfig.cloudreveApiKey}
                 onChange={e => updateAppConfig({ cloudreveApiKey: e.target.value })}
                 placeholder="粘贴 Cloudreve 存储服务的 ApiKey..."
-                className="w-full pr-12 px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 pr-10 font-mono text-sm"
               />
               <button
                 type="button"
                 onClick={() => setShowCloudreveApiKey(v => !v)}
-                className="cookie-visibility-button absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                className="cookie-visibility-button absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
                 title={showCloudreveApiKey ? '隐藏 ApiKey' : '显示 ApiKey'}
                 aria-label={showCloudreveApiKey ? '隐藏 ApiKey' : '显示 ApiKey'}
               >
-                {showCloudreveApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showCloudreveApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mt-2">仅在某个平台的图片上传方式选择「云存储 Cloudreve」上传图片时使用。</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Cloudreve 实例地址</label>
-              <input
-                type="text"
-                value={appConfig.cloudreveBaseUrl ?? ''}
-                onChange={e => updateAppConfig({ cloudreveBaseUrl: e.target.value })}
-                placeholder="https://cloudreve.example.com"
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
-              />
-              <p className="mt-1 text-xs text-gray-500">实例根地址，不含 /api/v4。</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div>
+                <label className="mb-0.5 block text-[10px] font-medium text-gray-500">实例地址</label>
+                <input
+                  type="text"
+                  value={appConfig.cloudreveBaseUrl ?? ''}
+                  onChange={e => updateAppConfig({ cloudreveBaseUrl: e.target.value })}
+                  placeholder="https://cloudreve.example.com"
+                  className="w-full rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-medium text-gray-500">令牌服务</label>
+                <input
+                  type="text"
+                  value={appConfig.cloudreveTokenServer ?? ''}
+                  onChange={e => updateAppConfig({ cloudreveTokenServer: e.target.value })}
+                  placeholder="https://.../t"
+                  className="w-full rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[10px] font-medium text-gray-500">远端目录</label>
+                <input
+                  type="text"
+                  value={appConfig.cloudreveRemoteDir ?? ''}
+                  onChange={e => updateAppConfig({ cloudreveRemoteDir: e.target.value })}
+                  placeholder="cloudreve://my/图片"
+                  className="w-full rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">令牌服务地址</label>
-              <input
-                type="text"
-                value={appConfig.cloudreveTokenServer ?? ''}
-                onChange={e => updateAppConfig({ cloudreveTokenServer: e.target.value })}
-                placeholder="https://cloudreve.example.com/t"
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
-              />
-              <p className="mt-1 text-xs text-gray-500">用于用 ApiKey 换取 refresh_token。</p>
+          </SettingsCard>
+
+          {/* 应用更新 */}
+          <SettingsCard
+            icon={<RefreshCw className="h-4 w-4" />}
+            title="应用更新"
+            description="通过 HTTPS 检查版本并打开官方发布页。"
+            actions={<span className="text-[11px] text-gray-400">桌面端可用</span>}
+          >
+            <UpdatePanel />
+          </SettingsCard>
+        </div>
+
+        {/* 危险区：清除敏感凭据（独立卡片，红边警示） */}
+        <div className="mt-4 rounded-xl border-2 border-red-200 bg-red-50/50 p-3">
+          <div className="flex items-start gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600">
+              <Trash2 className="h-4 w-4" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">远端上传目录</label>
-              <input
-                type="text"
-                value={appConfig.cloudreveRemoteDir ?? ''}
-                onChange={e => updateAppConfig({ cloudreveRemoteDir: e.target.value })}
-                placeholder="cloudreve://my/图片"
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg font-mono"
-              />
-              <p className="mt-1 text-xs text-gray-500">例如 cloudreve://my/图片，不存在会自动创建。</p>
+            <div className="min-w-0 flex-1">
+              <h4 className="flex items-center gap-1.5 text-sm font-semibold text-red-700">
+                危险区
+                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">不可恢复</span>
+              </h4>
+              <p className="mt-0.5 text-[11px] leading-5 text-red-700/90">
+                清除所有本地敏感凭据：内置平台 API Key、自定义平台 API Key、上传 Cookie、Cloudreve ApiKey。平台、模型、参数覆盖与任务历史均会保留。
+              </p>
             </div>
+            <button
+              onClick={handleClearSensitiveCredentials}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              title="清除本地 API Key / Cookie / Cloudreve ApiKey"
+            >
+              <Trash2 className="h-3.5 w-3.5" />清除敏感凭据
+            </button>
           </div>
         </div>
       </section>
-      
+      )}
+
+      {activeSubTab === 'builtin' && (
       <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">平台与模型</h3>
         <div className="space-y-3">
           {PLATFORM_DEFS.map(def => <BuiltinPlatformCard key={def.id} platformId={def.id} />)}
         </div>
       </section>
+      )}
 
+      {activeSubTab === 'custom' && (
       <section className="config-platforms-section mb-6 border border-gray-200 rounded-xl bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-700">自定义平台 / 中转站</h3>
@@ -388,6 +475,37 @@ const ConfigPage: React.FC = () => {
           </div>
         )}
       </section>
+      )}
+
+      {activeSubTab === 'overview' && (
+        <section className="config-overview-section mb-6 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">概览</h3>
+          <p className="text-sm text-gray-600">
+            这里显示当前配置的概览。点击上方「系统设置」可开启自动下载、填写上传 Cookie、配置 Cloudreve；「内置平台」填写 API Key 后即可使用；「自定义平台」可对接任意兼容 API。
+          </p>
+          <ul className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-500 sm:grid-cols-2">
+            <li className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <span className="font-medium text-gray-700">内置平台数：</span>
+              {PLATFORM_DEFS.length} 个
+            </li>
+            <li className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <span className="font-medium text-gray-700">自定义平台数：</span>
+              {(appConfig.customPlatforms ?? []).length} 个
+            </li>
+            <li className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <span className="font-medium text-gray-700">自动下载：</span>
+              {appConfig.autoDownload ? '已开启' : '未开启'}
+            </li>
+            <li className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <span className="font-medium text-gray-700">下载目录：</span>
+              <span className="truncate font-mono">{appConfig.downloadPath || '未设置'}</span>
+            </li>
+          </ul>
+          <p className="mt-3 text-xs text-amber-700">
+            导入/导出与「清除敏感凭据」按钮始终位于本页顶部，可随时操作。
+          </p>
+        </section>
+      )}
 
     </div>
   );

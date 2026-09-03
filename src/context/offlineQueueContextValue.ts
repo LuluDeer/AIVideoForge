@@ -10,6 +10,8 @@ export interface OfflineQueueContextType {
   clearOfflineQueue: () => void;
   retryOfflineTask: (id: string) => Promise<void>;
   processOfflineQueue: () => Promise<void>;
+  /** 将指定 id 的离线项在队列中上移（direction: 'up'）或下移（direction: 'down'） */
+  reorderOfflineTask: (id: string, direction: 'up' | 'down') => void;
 }
 
 export const OfflineQueueContext = createContext<OfflineQueueContextType | undefined>(undefined);
